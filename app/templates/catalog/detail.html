@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+
+{% block title %}{{ title.title }} - Tanager Library{% endblock %}
+
+{% block content %}
+<div class="mb-3">
+    <a href="{{ url_for('catalog.search') }}" class="btn btn-sm btn-outline-secondary">
+        <i class="bi bi-arrow-left me-1"></i> Back to Catalog
+    </a>
+</div>
+
+<div class="row g-4 mb-4">
+    <!-- Book Metadata Overview -->
+    <div class="col-md-4 col-lg-3 text-center">
+        <div class="card p-3 shadow-sm border-0 bg-white">
+            {% if title.cover_image_path %}
+                <img src="{{ url_for('static', filename=title.cover_image_path) }}" class="img-fluid rounded shadow-sm mb-3 mx-auto" style="max-height: 320px;" alt="Cover Art">
+            {% else %}
+                <div class="p-5 bg-light rounded text-muted mb-3">
+                    <i class="bi bi-image fs-1 d-block mb-2"></i>
+                    No Cover Art Available
+                </div>
+            {% endif %}
+
+            <div class="text-start small">
+                <div class="mb-1"><strong>ISBN:</strong> <code>{{ title.isbn }}</code></div>
+                {% if title.publisher %}
+                    <div class="mb-1"><strong>Publisher:</strong> {{ title.publisher }}</div>
+                {% endif %}
+                {% if title.publish_year %}
+                    <div class="mb-1"><strong>Published:</strong> {{ title.publish_year }}</div>
+                {% endif %}
+                <div class="mb-1"><strong>Total Copies:</strong> {{ copies|length }}</div>
+                <div><strong>Available:</strong> {{ title.available_copies_count }}</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-8 col-lg-9">
+        <div class="card shadow-sm border-0 p-4 bg-white mb-4">
+            <h3 class="fw-bold mb-1">{{ title.title }}</h3>
+            <h6 class="text-muted mb-3">{{ title.authors or 'Unknown Author' }}</h6>
+            <p class="text-secondary">{{ title.description or 'No synopsis recorded.' }}</p>
+
+            <div class="d-flex gap-2 mt-3">
+                {% if title.available_copies_count > 0 %}
+                    <form action="{{ url_for('circulation.checkout') }}" method="GET">
+                        <input type="hidden" name="identifier" value="{{ title.isbn }}">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-box-arrow-up-right me-1"></i> Check Out an Available Copy
+                        </button>
+                    </form>
+                {% else %}
+                    <form action="{{ url_for('circulation.holds') }}" method="POST">
+                        <input type="hidden" name="isbn" value="{{ title.isbn }}">
+                        <input type="hidden" name="user_id" value="{{ current_user.user_id if current_user else '' }}">
+                        <button type="submit" class="btn btn-warning">
+                            <i class="bi bi-bookmark-star me-1"></i> Reserve / Place Hold
+                        </button>
+                    </form>
+                {% endif %}
+                <a href="{{ url_for('reports.book_history', identifier=title.isbn) }}" class="btn btn-outline-secondary">
+                    <i class="bi bi-journal-text me-1"></i> View Full History
+                </a>
+            </div>
+        </div>
+
+        <!-- Physical Inventory Copies Table -->
+        <div class="card shadow-sm border-0 bg-white">
+            <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+                <h6 class="mb-0 fw-bold"><i class="bi bi-collection text-primary me-2"></i>Physical Inventory Copies</h6>
+                <form action="{{ url_for('catalog.register') }}" method="GET">
+                    <input type="hidden" name="isbn" value="{{ title.isbn }}">
+                    <button type="submit" class="btn btn-sm btn-outline-primary">
+                        <i class="bi bi-plus-circle me-1"></i> Add Another Copy
+                    </button>
+                </form>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="table-light small">
+                            <tr>
+                                <th>Copy ID</th>
+                                <th>Status</th>
+                                <th>Condition</th>
+                                <th>Shelf Location</th>
+                                <th>Registered By</th>
+                                <th>Current Loan / Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for copy in copies %}
+                            <tr>
+                                <td><code class="fw-bold text-dark">{{ copy.copy_id }}</code></td>
+                                <td>
+                                    <span class="badge badge-status-{{ copy.status }}">
+                                        {{ copy.status|replace('_', ' ')|capitalize }}
+                                    </span>
+                                </td>
+                                <td>
+                                    <span class="badge badge-condition-{{ copy.condition }}">
+                                        {{ copy.condition|capitalize }}
+                                    </span>
+                                </td>
+                                <td class="small">{{ copy.location }}</td>
+                                <td class="small text-muted">
+                                    {{ copy.registered_by or 'System' }} ({{ copy.registered_at.strftime('%Y-%m-%d') }})
+                                </td>
+                                <td>
+                                    {% if copy.status == 'available' %}
+                                        <form action="{{ url_for('circulation.checkout') }}" method="GET" class="d-inline">
+                                            <input type="hidden" name="identifier" value="{{ copy.copy_id }}">
+                                            <button type="submit" class="btn btn-sm btn-primary py-0">
+                                                Check Out
+                                            </button>
+                                        </form>
+                                    {% elif copy.status in ['borrowed', 'borrowed_and_on_hold'] %}
+                                        {% if copy.active_loan %}
+                                            <span class="small text-muted">
+                                                User <a href="{{ url_for('reports.user_history', user_id=copy.active_loan.user_id) }}">{{ copy.active_loan.user_id }}</a>
+                                                (Due: {{ copy.active_loan.due_date.strftime('%m/%d') }})
+                                            </span>
+                                            <form action="{{ url_for('circulation.checkin') }}" method="POST" class="d-inline ms-1">
+                                                <input type="hidden" name="identifier" value="{{ copy.copy_id }}">
+                                                <button type="submit" class="btn btn-sm btn-outline-success py-0">
+                                                    Check In
+                                                </button>
+                                            </form>
+                                        {% endif %}
+                                    {% else %}
+                                        <span class="small text-muted">{{ copy.status|capitalize }}</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,179 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Tanager Library{% endblock %}
+
+{% block content %}
+<div class="row g-3 mb-4">
+    <!-- Stat Cards -->
+    <div class="col-6 col-md-4 col-xl-2">
+        <div class="card stat-card shadow-sm border-0 text-center p-3 h-100 bg-white">
+            <div class="text-primary mb-1"><i class="bi bi-book fs-3"></i></div>
+            <div class="fs-4 fw-bold text-dark">{{ total_titles }}</div>
+            <div class="text-muted small">Titles in Catalog</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-4 col-xl-2">
+        <div class="card stat-card shadow-sm border-0 text-center p-3 h-100 bg-white">
+            <div class="text-secondary mb-1"><i class="bi bi-collection fs-3"></i></div>
+            <div class="fs-4 fw-bold text-dark">{{ total_copies }}</div>
+            <div class="text-muted small">Total Book Copies</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-4 col-xl-2">
+        <div class="card stat-card shadow-sm border-0 text-center p-3 h-100 bg-white">
+            <div class="text-primary mb-1"><i class="bi bi-box-arrow-up-right fs-3"></i></div>
+            <div class="fs-4 fw-bold text-primary">{{ borrowed_count }}</div>
+            <div class="text-muted small">Books Out</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-4 col-xl-2">
+        <div class="card stat-card shadow-sm border-0 text-center p-3 h-100 bg-white">
+            <div class="text-success mb-1"><i class="bi bi-check2-circle fs-3"></i></div>
+            <div class="fs-4 fw-bold text-success">{{ available_count }}</div>
+            <div class="text-muted small">Available on Shelf</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-4 col-xl-2">
+        <div class="card stat-card shadow-sm border-0 text-center p-3 h-100 bg-white">
+            <div class="text-danger mb-1"><i class="bi bi-tools fs-3"></i></div>
+            <div class="fs-4 fw-bold text-danger">{{ damaged_count }}</div>
+            <div class="text-muted small">Damaged Copies</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-4 col-xl-2">
+        <div class="card stat-card shadow-sm border-0 text-center p-3 h-100 bg-white">
+            <div class="text-warning mb-1"><i class="bi bi-bookmark-star fs-3"></i></div>
+            <div class="fs-4 fw-bold text-warning">{{ waiting_holds }}</div>
+            <div class="text-muted small">Waiting Holds</div>
+        </div>
+    </div>
+</div>
+
+<!-- Quick Action Kiosk Buttons -->
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <a href="{{ url_for('circulation.checkout') }}" class="btn btn-primary btn-lg w-100 py-3 shadow-sm d-flex flex-column align-items-center justify-content-center text-decoration-none">
+            <i class="bi bi-box-arrow-up-right fs-2 mb-1"></i>
+            <span class="fw-bold">Check Out</span>
+            <small class="opacity-75" style="font-size:0.75rem;">Scan User ID + ISBN</small>
+        </a>
+    </div>
+    <div class="col-md-3">
+        <a href="{{ url_for('circulation.checkin') }}" class="btn btn-success btn-lg w-100 py-3 shadow-sm d-flex flex-column align-items-center justify-content-center text-decoration-none">
+            <i class="bi bi-box-arrow-in-left fs-2 mb-1"></i>
+            <span class="fw-bold">Check In</span>
+            <small class="opacity-75" style="font-size:0.75rem;">Scan ISBN / Copy ID</small>
+        </a>
+    </div>
+    <div class="col-md-3">
+        <a href="{{ url_for('catalog.search') }}" class="btn btn-outline-dark btn-lg w-100 py-3 shadow-sm d-flex flex-column align-items-center justify-content-center text-decoration-none bg-white">
+            <i class="bi bi-search fs-2 mb-1 text-primary"></i>
+            <span class="fw-bold text-dark">Search Catalog</span>
+            <small class="text-muted" style="font-size:0.75rem;">Check availability & status</small>
+        </a>
+    </div>
+    <div class="col-md-3">
+        <a href="{{ url_for('catalog.register') }}" class="btn btn-outline-primary btn-lg w-100 py-3 shadow-sm d-flex flex-column align-items-center justify-content-center text-decoration-none bg-white">
+            <i class="bi bi-plus-circle fs-2 mb-1 text-secondary"></i>
+            <span class="fw-bold text-dark">Register Book</span>
+            <small class="text-muted" style="font-size:0.75rem;">Auto-lookup ISBN & covers</small>
+        </a>
+    </div>
+</div>
+
+<div class="row g-4">
+    <!-- Recent Circulation Activity -->
+    <div class="col-lg-6">
+        <div class="card shadow-sm border-0 h-100">
+            <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center border-bottom">
+                <h6 class="mb-0 fw-bold"><i class="bi bi-clock-history text-primary me-2"></i>Recent Checkouts</h6>
+                <a href="{{ url_for('reports.active_loans') }}" class="btn btn-sm btn-link text-decoration-none p-0">View All</a>
+            </div>
+            <div class="card-body p-0">
+                {% if recent_loans %}
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle mb-0">
+                            <thead class="table-light small">
+                                <tr>
+                                    <th>Book</th>
+                                    <th>Copy ID</th>
+                                    <th>User</th>
+                                    <th>Due Date</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for loan in recent_loans %}
+                                <tr>
+                                    <td>
+                                        <div class="fw-bold text-truncate" style="max-width: 180px;">{{ loan.copy.title.title if loan.copy and loan.copy.title else 'N/A' }}</div>
+                                    </td>
+                                    <td><code class="text-dark">{{ loan.copy_id }}</code></td>
+                                    <td>
+                                        <a href="{{ url_for('reports.user_history', user_id=loan.user_id) }}" class="badge bg-light text-dark text-decoration-none border">
+                                            {{ loan.user_id }}
+                                        </a>
+                                    </td>
+                                    <td class="small">
+                                        {{ loan.due_date.strftime('%Y-%m-%d') if loan.due_date else '' }}
+                                        {% if loan.status == 'active' and loan.is_overdue %}
+                                            <span class="badge bg-danger">Overdue</span>
+                                        {% elif loan.status == 'returned' %}
+                                            <span class="badge bg-secondary">Returned</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <div class="p-4 text-center text-muted">No checkout activity recorded yet.</div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Recently Added Books -->
+    <div class="col-lg-6">
+        <div class="card shadow-sm border-0 h-100">
+            <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center border-bottom">
+                <h6 class="mb-0 fw-bold"><i class="bi bi-stars text-warning me-2"></i>Recently Added Books</h6>
+                <a href="{{ url_for('catalog.search') }}" class="btn btn-sm btn-link text-decoration-none p-0">Browse All</a>
+            </div>
+            <div class="card-body">
+                {% if recent_titles %}
+                    <div class="row g-3">
+                        {% for title in recent_titles %}
+                        <div class="col-sm-6">
+                            <div class="d-flex p-2 border rounded bg-light align-items-center">
+                                {% if title.cover_image_path %}
+                                    <img src="{{ url_for('static', filename=title.cover_image_path) }}" class="book-cover-thumb me-2" alt="Cover">
+                                {% else %}
+                                    <div class="book-cover-thumb cover-placeholder me-2">No Cover</div>
+                                {% endif %}
+                                <div class="overflow-hidden">
+                                    <a href="{{ url_for('catalog.detail', isbn=title.isbn) }}" class="fw-bold text-dark text-decoration-none text-truncate d-block" style="font-size:0.9rem;">
+                                        {{ title.title }}
+                                    </a>
+                                    <div class="text-muted small text-truncate">{{ title.authors or 'Unknown' }}</div>
+                                    <div class="mt-1">
+                                        <span class="badge bg-primary" style="font-size:0.65rem;">{{ title.copies.count() }} Copies</span>
+                                        {% if title.available_copies_count > 0 %}
+                                            <span class="badge bg-success" style="font-size:0.65rem;">{{ title.available_copies_count }} Available</span>
+                                        {% else %}
+                                            <span class="badge bg-secondary" style="font-size:0.65rem;">0 Available</span>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <div class="p-4 text-center text-muted">No books registered in the catalog yet.</div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

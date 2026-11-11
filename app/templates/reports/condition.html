@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+
+{% block title %}Books by Condition - Tanager Library{% endblock %}
+
+{% block content %}
+<div class="row align-items-center mb-4">
+    <div class="col-md-8">
+        <h3 class="fw-bold mb-1"><i class="bi bi-tools text-primary me-2"></i>Books by Condition</h3>
+        <p class="text-muted small mb-0">Track library inventory health across New, Good, and Damaged states for repair or replacement.</p>
+    </div>
+</div>
+
+<!-- Summary Cards -->
+<div class="row g-3 mb-4">
+    <div class="col-md-4">
+        <a href="{{ url_for('reports.condition_report', condition='new') }}" class="card stat-card shadow-sm border-0 p-3 text-decoration-none bg-white {% if selected_condition == 'new' %}border-start border-4 border-success{% endif %}">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <div class="text-muted small">New / Like New</div>
+                    <div class="fs-3 fw-bold text-success">{{ counts.new }}</div>
+                </div>
+                <div class="p-3 bg-success bg-opacity-10 text-success rounded-circle">
+                    <i class="bi bi-patch-check fs-3"></i>
+                </div>
+            </div>
+        </a>
+    </div>
+    <div class="col-md-4">
+        <a href="{{ url_for('reports.condition_report', condition='good') }}" class="card stat-card shadow-sm border-0 p-3 text-decoration-none bg-white {% if selected_condition == 'good' %}border-start border-4 border-primary{% endif %}">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <div class="text-muted small">Good Condition</div>
+                    <div class="fs-3 fw-bold text-primary">{{ counts.good }}</div>
+                </div>
+                <div class="p-3 bg-primary bg-opacity-10 text-primary rounded-circle">
+                    <i class="bi bi-hand-thumbs-up fs-3"></i>
+                </div>
+            </div>
+        </a>
+    </div>
+    <div class="col-md-4">
+        <a href="{{ url_for('reports.condition_report', condition='damaged') }}" class="card stat-card shadow-sm border-0 p-3 text-decoration-none bg-white {% if selected_condition == 'damaged' %}border-start border-4 border-danger{% endif %}">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <div class="text-muted small">Damaged / Needs Attention</div>
+                    <div class="fs-3 fw-bold text-danger">{{ counts.damaged }}</div>
+                </div>
+                <div class="p-3 bg-danger bg-opacity-10 text-danger rounded-circle">
+                    <i class="bi bi-exclamation-triangle fs-3"></i>
+                </div>
+            </div>
+        </a>
+    </div>
+</div>
+
+<!-- Filtered Copies Table -->
+<div class="card shadow-sm border-0 bg-white">
+    <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+        <h6 class="mb-0 fw-bold">
+            <i class="bi bi-list-check text-primary me-2"></i>
+            {% if selected_condition %}
+                Copies in <strong>{{ selected_condition|capitalize }}</strong> Condition ({{ copies|length }})
+            {% else %}
+                All Active Copies ({{ copies|length }})
+            {% endif %}
+        </h6>
+        {% if selected_condition %}
+            <a href="{{ url_for('reports.condition_report') }}" class="btn btn-sm btn-link text-decoration-none">Clear Condition Filter</a>
+        {% endif %}
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light small">
+                    <tr>
+                        <th>Copy ID</th>
+                        <th>Book Title</th>
+                        <th>Condition</th>
+                        <th>Status</th>
+                        <th>Location</th>
+                        <th>Notes</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for copy in copies %}
+                    <tr>
+                        <td><code class="fw-bold text-dark">{{ copy.copy_id }}</code></td>
+                        <td>
+                            <a href="{{ url_for('catalog.detail', isbn=copy.isbn) }}" class="fw-bold text-dark text-decoration-none">
+                                {{ copy.title.title if copy.title else 'N/A' }}
+                            </a>
+                        </td>
+                        <td>
+                            <span class="badge badge-condition-{{ copy.condition }}">
+                                {{ copy.condition|capitalize }}
+                            </span>
+                        </td>
+                        <td>
+                            <span class="badge badge-status-{{ copy.status }}">
+                                {{ copy.status|replace('_', ' ')|capitalize }}
+                            </span>
+                        </td>
+                        <td class="small">{{ copy.location }}</td>
+                        <td class="small text-muted">{{ copy.notes or '—' }}</td>
+                        <td>
+                            <a href="{{ url_for('reports.book_history', identifier=copy.copy_id) }}" class="btn btn-sm btn-outline-secondary py-0">
+                                History
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

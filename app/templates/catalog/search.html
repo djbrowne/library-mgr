@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+
+{% block title %}Catalog Search - Tanager Library{% endblock %}
+
+{% block content %}
+<div class="row align-items-center mb-4">
+    <div class="col-md-6">
+        <h3 class="fw-bold mb-1"><i class="bi bi-collection text-primary me-2"></i>Library Catalog</h3>
+        <p class="text-muted small mb-0">Search books, check real-time availability, and find copy locations.</p>
+    </div>
+    <div class="col-md-6 text-md-end mt-2 mt-md-0">
+        <a href="{{ url_for('catalog.register') }}" class="btn btn-primary">
+            <i class="bi bi-plus-circle me-1"></i> Register New Book
+        </a>
+    </div>
+</div>
+
+<!-- Search & Filter Card -->
+<div class="card shadow-sm border-0 mb-4 bg-white p-3">
+    <form action="{{ url_for('catalog.search') }}" method="GET" class="row g-2">
+        <div class="col-md-6">
+            <div class="input-group">
+                <span class="input-group-text bg-light"><i class="bi bi-search text-muted"></i></span>
+                <input type="text" name="q" class="form-control" placeholder="Search by Title, Author, or ISBN..." value="{{ query }}">
+            </div>
+        </div>
+        <div class="col-md-3">
+            <select name="status" class="form-select">
+                <option value="">All Statuses</option>
+                <option value="available" {% if status_filter == 'available' %}selected{% endif %}>Available</option>
+                <option value="borrowed" {% if status_filter == 'borrowed' %}selected{% endif %}>Borrowed</option>
+                <option value="borrowed_and_on_hold" {% if status_filter == 'borrowed_and_on_hold' %}selected{% endif %}>Borrowed (On Hold)</option>
+                <option value="on_hold" {% if status_filter == 'on_hold' %}selected{% endif %}>On Hold</option>
+                <option value="lost" {% if status_filter == 'lost' %}selected{% endif %}>Lost</option>
+                <option value="removed" {% if status_filter == 'removed' %}selected{% endif %}>Removed</option>
+            </select>
+        </div>
+        <div class="col-md-2">
+            <select name="condition" class="form-select">
+                <option value="">All Conditions</option>
+                <option value="new" {% if condition_filter == 'new' %}selected{% endif %}>New</option>
+                <option value="good" {% if condition_filter == 'good' %}selected{% endif %}>Good</option>
+                <option value="damaged" {% if condition_filter == 'damaged' %}selected{% endif %}>Damaged</option>
+            </select>
+        </div>
+        <div class="col-md-1">
+            <button type="submit" class="btn btn-primary w-100">Filter</button>
+        </div>
+    </form>
+</div>
+
+<!-- Results Grid -->
+{% if results %}
+    <div class="row g-3">
+        {% for item in results %}
+        {% set title = item.title %}
+        {% set copies = item.copies %}
+        <div class="col-md-6 col-lg-4">
+            <div class="card h-100 shadow-sm border-0 p-3">
+                <div class="d-flex align-items-start">
+                    {% if title.cover_image_path %}
+                        <img src="{{ url_for('static', filename=title.cover_image_path) }}" class="book-cover-thumb me-3" alt="Cover">
+                    {% else %}
+                        <div class="book-cover-thumb cover-placeholder me-3">
+                            <span>No Cover</span>
+                        </div>
+                    {% endif %}
+                    <div class="flex-grow-1 overflow-hidden">
+                        <h6 class="fw-bold mb-1 text-truncate" title="{{ title.title }}">
+                            <a href="{{ url_for('catalog.detail', isbn=title.isbn) }}" class="text-dark text-decoration-none">
+                                {{ title.title }}
+                            </a>
+                        </h6>
+                        <div class="small text-muted text-truncate mb-2">{{ title.authors or 'Unknown Author' }}</div>
+                        <div class="small mb-2">
+                            <span class="badge bg-light text-dark border">ISBN: {{ title.isbn }}</span>
+                        </div>
+                    </div>
+                </div>
+
+                <hr class="my-2 text-muted opacity-25">
+
+                <!-- Copies Status Pills -->
+                <div class="small mb-3">
+                    <span class="text-muted fw-bold">Copies ({{ copies|length }}):</span>
+                    <div class="d-flex flex-wrap gap-1 mt-1">
+                        {% for copy in copies %}
+                            <span class="badge badge-status-{{ copy.status }}" title="Condition: {{ copy.condition }} | Loc: {{ copy.location }}">
+                                {{ copy.copy_id }}: {{ copy.status|replace('_', ' ')|capitalize }}
+                            </span>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <div class="mt-auto d-flex gap-2">
+                    <a href="{{ url_for('catalog.detail', isbn=title.isbn) }}" class="btn btn-sm btn-outline-primary flex-grow-1">
+                        View Copies & Details
+                    </a>
+                    {% if title.available_copies_count > 0 %}
+                        <form action="{{ url_for('circulation.checkout') }}" method="GET" class="d-inline">
+                            <input type="hidden" name="identifier" value="{{ title.isbn }}">
+                            <button type="submit" class="btn btn-sm btn-primary">
+                                Check Out
+                            </button>
+                        </form>
+                    {% else %}
+                        <form action="{{ url_for('circulation.holds') }}" method="POST" class="d-inline">
+                            <input type="hidden" name="isbn" value="{{ title.isbn }}">
+                            <input type="hidden" name="user_id" value="{{ current_user.user_id if current_user else '' }}">
+                            <button type="submit" class="btn btn-sm btn-outline-warning">
+                                Hold
+                            </button>
+                        </form>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+{% else %}
+    <div class="card shadow-sm border-0 p-5 text-center bg-white">
+        <i class="bi bi-book fs-1 text-muted mb-2"></i>
+        <h5 class="fw-bold text-dark">No Books Found</h5>
+        <p class="text-muted small">No books matched your search query or filters.</p>
+        <div>
+            <a href="{{ url_for('catalog.register') }}" class="btn btn-primary btn-sm">
+                <i class="bi bi-plus-circle me-1"></i> Register a New Book
+            </a>
+        </div>
+    </div>
+{% endif %}
+{% endblock %}

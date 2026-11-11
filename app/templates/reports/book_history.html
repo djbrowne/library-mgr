@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+
+{% block title %}Book History - Tanager Library{% endblock %}
+
+{% block content %}
+<div class="row align-items-center mb-4">
+    <div class="col-md-8">
+        <h3 class="fw-bold mb-1"><i class="bi bi-journal-text text-primary me-2"></i>Specific Book History</h3>
+        <p class="text-muted small mb-0">Search any ISBN or Copy ID to view complete circulation and movement history.</p>
+    </div>
+</div>
+
+<div class="card shadow-sm border-0 mb-4 bg-white p-3">
+    <form action="{{ url_for('reports.book_history') }}" method="GET" class="row g-2">
+        <div class="col-md-10">
+            <div class="input-group">
+                <span class="input-group-text bg-light"><i class="bi bi-upc-scan text-muted"></i></span>
+                <input type="text" name="identifier" class="form-control barcode-input" placeholder="Enter ISBN or Copy ID (e.g. 9780132350884 or 9780132350884-1)" value="{{ identifier }}" required autofocus>
+            </div>
+        </div>
+        <div class="col-md-2">
+            <button type="submit" class="btn btn-primary w-100">Lookup History</button>
+        </div>
+    </form>
+</div>
+
+{% if identifier %}
+    {% if title or copy %}
+        <div class="card shadow-sm border-0 p-3 bg-white mb-4">
+            <div class="d-flex align-items-center">
+                {% if title and title.cover_image_path %}
+                    <img src="{{ url_for('static', filename=title.cover_image_path) }}" class="book-cover-thumb me-3" alt="Cover">
+                {% else %}
+                    <div class="book-cover-thumb cover-placeholder me-3">No Cover</div>
+                {% endif %}
+                <div>
+                    <h5 class="fw-bold mb-1">{{ title.title if title else (copy.title.title if copy else '') }}</h5>
+                    <div class="text-muted small">
+                        {% if copy %}
+                            Copy ID: <code>{{ copy.copy_id }}</code> &bull; Status: <strong>{{ copy.status }}</strong> &bull; Condition: <strong>{{ copy.condition }}</strong> &bull; Shelf: <strong>{{ copy.location }}</strong>
+                        {% else %}
+                            ISBN: <code>{{ title.isbn }}</code> &bull; Total Copies: <strong>{{ title.copies.count() }}</strong>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row g-4">
+            <!-- Checkout History -->
+            <div class="col-lg-6">
+                <div class="card shadow-sm border-0 bg-white h-100">
+                    <div class="card-header bg-white py-3">
+                        <h6 class="mb-0 fw-bold"><i class="bi bi-clock-history text-primary me-2"></i>Circulation & Loan History</h6>
+                    </div>
+                    <div class="card-body p-0">
+                        {% if history %}
+                            <div class="table-responsive">
+                                <table class="table table-hover align-middle mb-0 small">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>Borrower</th>
+                                            <th>Copy ID</th>
+                                            <th>Checked Out</th>
+                                            <th>Returned</th>
+                                            <th>Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for loan in history %}
+                                        <tr>
+                                            <td>
+                                                <a href="{{ url_for('reports.user_history', user_id=loan.user_id) }}" class="badge bg-light text-dark text-decoration-none border">
+                                                    {{ loan.user.name if loan.user else loan.user_id }} ({{ loan.user_id }})
+                                                </a>
+                                            </td>
+                                            <td><code>{{ loan.copy_id }}</code></td>
+                                            <td>{{ loan.checkout_date.strftime('%Y-%m-%d %H:%M') }}</td>
+                                            <td>{{ loan.returned_date.strftime('%Y-%m-%d %H:%M') if loan.returned_date else 'Still Checked Out' }}</td>
+                                            <td>
+                                                <span class="badge {% if loan.status == 'active' %}bg-primary{% else %}bg-secondary{% endif %}">
+                                                    {{ loan.status }}
+                                                </span>
+                                            </td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        {% else %}
+                            <div class="p-4 text-center text-muted small">No loans recorded for this book.</div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+
+            <!-- Permanent Movement & Audit Events -->
+            <div class="col-lg-6">
+                <div class="card shadow-sm border-0 bg-white h-100">
+                    <div class="card-header bg-white py-3">
+                        <h6 class="mb-0 fw-bold"><i class="bi bi-shield-check text-success me-2"></i>Permanent Audit Trail Events</h6>
+                    </div>
+                    <div class="card-body p-0">
+                        {% if audit_events %}
+                            <div class="table-responsive">
+                                <table class="table table-hover align-middle mb-0 small">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>Timestamp</th>
+                                            <th>Action</th>
+                                            <th>User ID</th>
+                                            <th>Details / Notes</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for ev in audit_events %}
+                                        <tr>
+                                            <td class="text-muted">{{ ev.timestamp.strftime('%Y-%m-%d %H:%M') }}</td>
+                                            <td><span class="badge bg-dark">{{ ev.action }}</span></td>
+                                            <td><code>{{ ev.user_id or 'System' }}</code></td>
+                                            <td>
+                                                <div>{{ ev.notes or '—' }}</div>
+                                                {% if ev.new_state %}
+                                                    <code class="text-secondary" style="font-size:0.75rem;">{{ ev.new_state }}</code>
+                                                {% endif %}
+                                            </td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        {% else %}
+                            <div class="p-4 text-center text-muted small">No audit events found.</div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    {% else %}
+        <div class="alert alert-warning">No book or copy found matching '{{ identifier }}'.</div>
+    {% endif %}
+{% endif %}
+{% endblock %}

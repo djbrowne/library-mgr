@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+
+{% block title %}Check In - Tanager Library{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center mb-4">
+    <div class="col-lg-7">
+        <div class="card kiosk-card shadow-sm p-4">
+            <div class="d-flex align-items-center mb-3">
+                <div class="p-3 bg-success bg-opacity-10 text-success rounded-circle me-3">
+                    <i class="bi bi-box-arrow-in-left fs-2"></i>
+                </div>
+                <div>
+                    <h4 class="mb-0 fw-bold">Book Check-In Station</h4>
+                    <p class="text-muted small mb-0">Scan or enter the Book ISBN or Copy ID</p>
+                </div>
+            </div>
+
+            <!-- Notice card -->
+            <div class="alert alert-info d-flex align-items-center py-2" role="alert">
+                <i class="bi bi-info-circle-fill fs-5 me-2"></i>
+                <div class="small">
+                    After checking in, please place the book in the <strong>library room cart for re-shelving</strong> (or hold bin if reserved).
+                </div>
+            </div>
+
+            <!-- Camera Video Feed Container -->
+            <div id="scanner-container" class="border rounded p-3 mb-3 bg-light text-center d-none">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <span class="small fw-bold"><i class="bi bi-camera-video me-1"></i> Live Barcode Camera Scanner</span>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="stopCameraScanner()">Close Camera</button>
+                </div>
+                <video id="scanner-video" class="w-100 rounded" style="max-height: 240px; background: #000;"></video>
+                <div id="scanner-status" class="small text-muted mt-1">Point barcode at camera...</div>
+            </div>
+
+            <form action="{{ url_for('circulation.checkin') }}" method="POST">
+                <div class="row g-3">
+                    <div class="col-12">
+                        <label class="form-label fw-bold text-dark">
+                            <i class="bi bi-upc-scan text-success me-1"></i> Book ISBN or Copy ID (e.g. 9780132350884-1)
+                        </label>
+                        <div class="input-group">
+                            <input type="text" 
+                                   name="identifier" 
+                                   id="checkin_identifier"
+                                   class="form-control form-control-lg barcode-input" 
+                                   placeholder="Scan barcode or type ISBN / Copy ID..." 
+                                   data-autofocus 
+                                   required>
+                            <button type="button" class="btn btn-outline-secondary" title="Scan with Camera" onclick="startCameraScanner('checkin_identifier')">
+                                <i class="bi bi-camera"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="col-md-6">
+                        <label class="form-label small text-muted">Condition Upon Return (Optional)</label>
+                        <select name="condition_override" class="form-select form-select-sm">
+                            <option value="">Keep current condition</option>
+                            <option value="good">Good</option>
+                            <option value="new">New / Like New</option>
+                            <option value="damaged">Damaged (Report to Admin)</option>
+                        </select>
+                    </div>
+
+                    <div class="col-md-6">
+                        <label class="form-label small text-muted">Notes / Shelf Return Comments</label>
+                        <input type="text" name="notes" class="form-control form-control-sm" placeholder="Optional notes...">
+                    </div>
+
+                    <div class="col-12 mt-4">
+                        <button type="submit" class="btn btn-success btn-lg w-100 py-3 fw-bold">
+                            <i class="bi bi-box-arrow-in-left me-1"></i> Process Book Return
+                        </button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Recent Returns Table -->
+<div class="card shadow-sm border-0">
+    <div class="card-header bg-white py-3">
+        <h6 class="mb-0 fw-bold"><i class="bi bi-check2-circle text-success me-2"></i>Recently Returned Books</h6>
+    </div>
+    <div class="card-body p-0">
+        {% if recent_returns %}
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light small">
+                        <tr>
+                            <th>Book Title</th>
+                            <th>Copy ID</th>
+                            <th>Returned By</th>
+                            <th>Return Timestamp</th>
+                            <th>Condition</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for loan in recent_returns %}
+                        <tr>
+                            <td>
+                                <strong>{{ loan.copy.title.title if loan.copy and loan.copy.title else 'N/A' }}</strong>
+                            </td>
+                            <td><code class="text-dark">{{ loan.copy_id }}</code></td>
+                            <td>
+                                <a href="{{ url_for('reports.user_history', user_id=loan.user_id) }}" class="badge bg-light text-dark text-decoration-none border">
+                                    {{ loan.user.name if loan.user else loan.user_id }} ({{ loan.user_id }})
+                                </a>
+                            </td>
+                            <td class="small">{{ loan.returned_date.strftime('%Y-%m-%d %H:%M') if loan.returned_date else '' }}</td>
+                            <td>
+                                <span class="badge badge-condition-{{ loan.return_condition or loan.copy.condition }}">
+                                    {{ loan.return_condition or loan.copy.condition }}
+                                </span>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <div class="p-4 text-center text-muted">No recently returned books.</div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

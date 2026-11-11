@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+
+{% block title %}Register Book - Tanager Library{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-9">
+        <div class="card kiosk-card shadow-sm p-4">
+            <div class="d-flex align-items-center mb-4">
+                <div class="p-3 bg-primary bg-opacity-10 text-primary rounded-circle me-3">
+                    <i class="bi bi-journal-plus fs-2"></i>
+                </div>
+                <div>
+                    <h4 class="mb-0 fw-bold">Register New Book into Catalog</h4>
+                    <p class="text-muted small mb-0">Enter the ISBN to automatically look up metadata, download cover art, and assign a copy tag.</p>
+                </div>
+            </div>
+
+            <form action="{{ url_for('catalog.register') }}" method="POST">
+                <div class="card bg-light border-0 p-3 mb-4">
+                    <label class="form-label fw-bold"><i class="bi bi-upc-scan text-primary me-1"></i> ISBN (ISBN-10 or ISBN-13)</label>
+                    <div class="input-group">
+                        <input type="text" 
+                               name="isbn" 
+                               id="reg-isbn" 
+                               class="form-control form-control-lg barcode-input" 
+                               placeholder="e.g. 9780132350884" 
+                               data-autofocus 
+                               required>
+                        <button type="button" class="btn btn-primary" id="btn-lookup-isbn">
+                            <i class="bi bi-search me-1"></i> Look Up Online
+                        </button>
+                    </div>
+                    <div id="lookup-status" class="mt-2 small text-muted">
+                        Online lookup checks Open Library and Google Books to automatically download title, author, description, and cover art.
+                    </div>
+                </div>
+
+                <div class="row g-4">
+                    <!-- Left: Metadata details -->
+                    <div class="col-md-8">
+                        <div class="mb-3">
+                            <label class="form-label small fw-bold">Book Title</label>
+                            <input type="text" name="title" id="reg-title" class="form-control" placeholder="Book Title" required>
+                        </div>
+
+                        <div class="row g-2 mb-3">
+                            <div class="col-md-7">
+                                <label class="form-label small fw-bold">Author(s)</label>
+                                <input type="text" name="authors" id="reg-authors" class="form-control" placeholder="Author name(s)">
+                            </div>
+                            <div class="col-md-5">
+                                <label class="form-label small fw-bold">Publication Year</label>
+                                <input type="text" name="publish_year" id="reg-publish-year" class="form-control" placeholder="e.g. 2008">
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label small fw-bold">Publisher</label>
+                            <input type="text" name="publisher" id="reg-publisher" class="form-control" placeholder="Publisher name">
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label small fw-bold">Description / Summary</label>
+                            <textarea name="description" id="reg-description" class="form-control" rows="3" placeholder="Book synopsis or summary..."></textarea>
+                        </div>
+                    </div>
+
+                    <!-- Right: Cover preview & Copy details -->
+                    <div class="col-md-4">
+                        <label class="form-label small fw-bold">Cover Art Preview</label>
+                        <div class="border rounded p-2 text-center bg-white mb-3" style="min-height: 210px; display: flex; align-items: center; justify-content: center;">
+                            <img id="cover-preview-img" src="" class="book-cover-large d-none" alt="Cover Preview">
+                            <div id="cover-preview-container" class="text-muted small">
+                                <i class="bi bi-image fs-1 d-block mb-1"></i>
+                                Cover will appear here upon ISBN lookup
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label small fw-bold">Registrar User ID (4 Digits)</label>
+                            <input type="text" 
+                                   name="user_id" 
+                                   class="form-control text-center fw-bold" 
+                                   value="{{ current_user.user_id if current_user else '' }}" 
+                                   placeholder="0001" 
+                                   maxlength="4" 
+                                   pattern="\d{4}" 
+                                   required>
+                            <small class="text-muted">Recorded permanently in the audit trail.</small>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label small fw-bold">Initial Condition</label>
+                            <select name="condition" class="form-select" required>
+                                <option value="new" selected>New / Like New</option>
+                                <option value="good">Good</option>
+                                <option value="damaged">Damaged</option>
+                            </select>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label small fw-bold">Shelf / Room Location</label>
+                            <input type="text" name="location" class="form-control" value="Main Room / Shelf A" placeholder="e.g. Room 101 / Shelf B">
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label small fw-bold">Copy Notes (Optional)</label>
+                            <input type="text" name="notes" class="form-control" placeholder="e.g. Donated copy">
+                        </div>
+                    </div>
+
+                    <div class="col-12 mt-4">
+                        <button type="submit" class="btn btn-primary btn-lg w-100 py-3 fw-bold">
+                            <i class="bi bi-check-circle me-1"></i> Register Book & Assign Copy Suffix
+                        </button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
