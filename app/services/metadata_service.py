@@ -1,20 +1,190 @@
+import os
 import re
 import requests
 from pathlib import Path
 from flask import current_app
 
+HEADERS = {
+    'User-Agent': 'TanagerLibraryManager/1.0 (https://github.com/djbrowne/library-mgr)'
+}
+
 def clean_isbn(raw_isbn: str) -> str:
     """Strip hyphens, spaces, and normalize ISBN string."""
     if not raw_isbn:
         return ""
-    # Keep digits and 'X'/'x'
     cleaned = re.sub(r'[^0-9Xx]', '', raw_isbn.strip()).upper()
     return cleaned
+
+def clean_text(text: str) -> str:
+    """Remove Markdown links, URLs, and excessive whitespace from descriptions."""
+    if not text:
+        return ""
+    if isinstance(text, dict):
+        text = text.get("value", "")
+    text = re.sub(r'https?://\S+', '', text)
+    text = re.sub(r'\[(.*?)\]\(.*?\)', r'\1', text)
+    text = re.sub(r'[\r\n]+', '\n', text)
+    return text.strip()
+
+def fetch_work_description(work_key: str) -> str:
+    """Fetch description from Open Library Work endpoint (e.g. /works/OL1234567W)."""
+    if not work_key:
+        return ""
+    try:
+        url = f"https://openlibrary.org{work_key}.json"
+        resp = requests.get(url, headers=HEADERS, timeout=4)
+        if resp.status_code == 200:
+            data = resp.json()
+            desc = data.get("description")
+            cleaned = clean_text(desc)
+            if cleaned:
+                return cleaned
+    except Exception:
+        pass
+    return ""
+
+def fetch_wikipedia_summary(title: str, author: str = None) -> str:
+    """Query Wikipedia REST/Search API for book or author summary."""
+    if not title:
+        return ""
+
+    queries = []
+    if author and author != "Unknown Author":
+        queries.append(f'"{title}" {author} book')
+    queries.append(f'"{title}" novel')
+    queries.append(f'"{title}" book')
+    queries.append(title)
+
+    for q in queries:
+        try:
+            search_url = f"https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch={requests.utils.quote(q)}&format=json"
+            resp = requests.get(search_url, headers=HEADERS, timeout=4)
+            if resp.status_code != 200:
+                continue
+
+            results = resp.json().get('query', {}).get('search', [])
+            for item in results[:2]:
+                page_title = item.get('title')
+                if not page_title:
+                    continue
+
+                summary_url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{requests.utils.quote(page_title.replace(' ', '_'))}"
+                sum_resp = requests.get(summary_url, headers=HEADERS, timeout=4)
+                if sum_resp.status_code == 200:
+                    sum_data = sum_resp.json()
+                    extract = sum_data.get('extract')
+                    desc_type = sum_data.get('description', '').lower()
+                    if extract:
+                        ext_lower = extract.lower()
+                        # Verify relevance to books/novels/authors
+                        if ('book' in ext_lower or 'novel' in ext_lower or 'published' in ext_lower or
+                            'author' in ext_lower or 'writer' in ext_lower or 'book' in desc_type or
+                            'novel' in desc_type or title.lower() in page_title.lower()):
+                            return clean_text(extract)
+        except Exception:
+            continue
+
+    return ""
+
+def fetch_book_description(isbn: str, title: str = None, authors: str = None, work_key: str = None, raw_data: dict = None) -> str:
+    """
+    Dedicated multi-source description resolver.
+    If initial edition lookup lacks a description, resolves it via:
+    1. Open Library Work record (/works/OL...json)
+    2. Google Books API (with optional GOOGLE_BOOKS_API_KEY support)
+    3. Wikipedia article summary for title/author
+    4. Open Library subject/series/notes synthesis fallback
+    """
+    clean = clean_isbn(isbn)
+    raw_data = raw_data or {}
+
+    # 1. Check Open Library Work record
+    if not work_key and raw_data.get("works"):
+        work_key = raw_data["works"][0].get("key")
+
+    if work_key:
+        work_desc = fetch_work_description(work_key)
+        if work_desc:
+            return work_desc
+
+    # 2. Query Google Books API
+    try:
+        api_key = os.environ.get('GOOGLE_BOOKS_API_KEY', '').strip()
+        gb_url = f"https://www.googleapis.com/books/v1/volumes?q=isbn:{clean}"
+        if api_key:
+            gb_url += f"&key={api_key}"
+        gb_resp = requests.get(gb_url, headers=HEADERS, timeout=4)
+        if gb_resp.status_code == 200:
+            gb_data = gb_resp.json()
+            items = gb_data.get("items", [])
+            if items:
+                v_desc = items[0].get("volumeInfo", {}).get("description")
+                if v_desc:
+                    return clean_text(v_desc)
+    except Exception:
+        pass
+
+    # If title is available, try Google Books by title and author
+    if title and title != f"Book (ISBN: {clean})":
+        try:
+            api_key = os.environ.get('GOOGLE_BOOKS_API_KEY', '').strip()
+            q_str = f"intitle:{title}"
+            if authors and authors != "Unknown Author":
+                q_str += f"+inauthor:{authors.split(',')[0].strip()}"
+            gb_url2 = f"https://www.googleapis.com/books/v1/volumes?q={requests.utils.quote(q_str)}"
+            if api_key:
+                gb_url2 += f"&key={api_key}"
+            gb_resp2 = requests.get(gb_url2, headers=HEADERS, timeout=4)
+            if gb_resp2.status_code == 200:
+                gb_data2 = gb_resp2.json()
+                items2 = gb_data2.get("items", [])
+                if items2:
+                    v_desc2 = items2[0].get("volumeInfo", {}).get("description")
+                    if v_desc2:
+                        return clean_text(v_desc2)
+        except Exception:
+            pass
+
+    # 3. Query Wikipedia for summary
+    if title and title != f"Book (ISBN: {clean})":
+        wiki_desc = fetch_wikipedia_summary(title, authors)
+        if wiki_desc:
+            return wiki_desc
+
+    # 4. Open Library Subject & Scope Synthesis Fallback
+    subjects = raw_data.get("subjects", [])
+    if not subjects and work_key:
+        try:
+            w_resp = requests.get(f"https://openlibrary.org{work_key}.json", headers=HEADERS, timeout=3)
+            if w_resp.status_code == 200:
+                subjects = w_resp.json().get("subjects", [])
+        except Exception:
+            pass
+
+    if subjects:
+        subj_names = [s if isinstance(s, str) else s.get("name", "") for s in subjects]
+        subj_names = [s for s in subj_names if s][:5]
+        if subj_names:
+            auth_str = f" by {authors}" if (authors and authors != "Unknown Author") else ""
+            return f"A volume{auth_str} covering: {', '.join(subj_names)}."
+
+    # 5. Open Library notes/first_sentence fallback
+    notes = raw_data.get("notes")
+    if notes:
+        return clean_text(notes)
+
+    first_sentence = raw_data.get("first_sentence")
+    if first_sentence:
+        return clean_text(first_sentence)
+
+    return ""
 
 def fetch_book_metadata(isbn: str) -> dict:
     """
     Lookup book metadata using Open Library and Google Books API.
     Downloads cover image to local static/covers/ directory.
+    If description is missing from the initial edition, executes
+    a dedicated multi-source description lookup.
     """
     clean = clean_isbn(isbn)
     if not clean:
@@ -26,39 +196,43 @@ def fetch_book_metadata(isbn: str) -> dict:
     publisher = None
     publish_year = None
     cover_url = None
+    work_key = None
+    raw_data = {}
 
     # 1. Try Open Library direct endpoint
     try:
         url = f"https://openlibrary.org/isbn/{clean}.json"
-        resp = requests.get(url, timeout=4)
+        resp = requests.get(url, headers=HEADERS, timeout=4)
         if resp.status_code == 200:
-            data = resp.json()
-            title = data.get("title")
-            publish_year = data.get("publish_date")
-            if data.get("publishers"):
-                publisher = ", ".join(data.get("publishers"))
+            raw_data = resp.json()
+            title = raw_data.get("title")
+            publish_year = raw_data.get("publish_date")
+            if raw_data.get("publishers"):
+                publisher = ", ".join(raw_data.get("publishers"))
             
+            # Extract work key
+            if raw_data.get("works"):
+                work_key = raw_data["works"][0].get("key")
+
             # Covers
-            covers = data.get("covers")
+            covers = raw_data.get("covers")
             if covers and len(covers) > 0 and covers[0] > 0:
                 cover_url = f"https://covers.openlibrary.org/b/id/{covers[0]}-M.jpg"
             else:
                 cover_url = f"https://covers.openlibrary.org/b/isbn/{clean}-M.jpg"
 
-            # Check description
-            desc_field = data.get("description")
-            if isinstance(desc_field, dict):
-                description = desc_field.get("value")
-            elif isinstance(desc_field, str):
-                description = desc_field
-    except Exception as e:
+            # Check description on edition
+            desc_field = raw_data.get("description")
+            if desc_field:
+                description = clean_text(desc_field)
+    except Exception:
         pass
 
     # 2. Try Open Library Search endpoint to resolve authors or fill in missing fields
     if not title or not authors:
         try:
             search_url = f"https://openlibrary.org/search.json?q={clean}"
-            s_resp = requests.get(search_url, timeout=4)
+            s_resp = requests.get(search_url, headers=HEADERS, timeout=4)
             if s_resp.status_code == 200:
                 s_data = s_resp.json()
                 docs = s_data.get("docs", [])
@@ -74,14 +248,19 @@ def fetch_book_metadata(isbn: str) -> dict:
                         publish_year = str(doc.get("first_publish_year"))
                     if not cover_url and doc.get("cover_i"):
                         cover_url = f"https://covers.openlibrary.org/b/id/{doc.get('cover_i')}-M.jpg"
+                    if not work_key and doc.get("key"):
+                        work_key = doc.get("key")
         except Exception:
             pass
 
-    # 3. Fallback to Google Books if still missing title or description
-    if not title or not description or not cover_url:
+    # 3. Fallback to Google Books for basic bibliographic info if still missing
+    if not title or not authors or not cover_url:
         try:
+            api_key = os.environ.get('GOOGLE_BOOKS_API_KEY', '').strip()
             gb_url = f"https://www.googleapis.com/books/v1/volumes?q=isbn:{clean}"
-            gb_resp = requests.get(gb_url, timeout=4)
+            if api_key:
+                gb_url += f"&key={api_key}"
+            gb_resp = requests.get(gb_url, headers=HEADERS, timeout=4)
             if gb_resp.status_code == 200:
                 gb_data = gb_resp.json()
                 items = gb_data.get("items", [])
@@ -91,9 +270,9 @@ def fetch_book_metadata(isbn: str) -> dict:
                         title = v_info.get("title")
                     if not authors and v_info.get("authors"):
                         authors = ", ".join(v_info.get("authors"))
-                    if not description:
-                        description = v_info.get("description")
-                    if not publisher:
+                    if not description and v_info.get("description"):
+                        description = clean_text(v_info.get("description"))
+                    if not publisher and v_info.get("publisher"):
                         publisher = v_info.get("publisher")
                     if not publish_year and v_info.get("publishedDate"):
                         publish_year = v_info.get("publishedDate")
@@ -105,6 +284,16 @@ def fetch_book_metadata(isbn: str) -> dict:
     # Fallback default title if nothing was found online
     if not title:
         title = f"Book (ISBN: {clean})"
+
+    # 4. If description was NOT in the initial metadata, look it up separately!
+    if not description:
+        description = fetch_book_description(
+            clean,
+            title=title,
+            authors=authors,
+            work_key=work_key,
+            raw_data=raw_data
+        )
 
     # Save cover image locally if found
     local_cover_rel = save_cover_locally(clean, cover_url)
@@ -133,8 +322,7 @@ def save_cover_locally(clean_isbn: str, image_url: str) -> str:
         return None
 
     try:
-        # Download image with timeout
-        resp = requests.get(image_url, timeout=5)
+        resp = requests.get(image_url, headers=HEADERS, timeout=5)
         # Avoid Open Library 1x1 blank pixel placeholder
         if resp.status_code == 200 and len(resp.content) > 1000:
             with open(dest_path, "wb") as f:

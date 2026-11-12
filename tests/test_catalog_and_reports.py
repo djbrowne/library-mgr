@@ -82,3 +82,11 @@ def test_cover_art_persistence_on_registration(client, app):
         assert title is not None
         assert title.cover_image_path == 'covers/9780134494166.jpg'
         assert title.display_cover_path == 'covers/9780134494166.jpg'
+
+def test_lookup_description_endpoint(client, app):
+    # Test looking up description separately via API endpoint
+    res = client.get('/catalog/lookup-description?isbn=9780132350884&title=Clean+Code')
+    assert res.status_code == 200
+    data = res.get_json()
+    assert 'description' in data
+    assert isinstance(data['description'], str)

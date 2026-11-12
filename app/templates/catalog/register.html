@@ -65,8 +65,14 @@
                         </div>
 
                         <div class="mb-3">
-                            <label class="form-label small fw-bold">Description / Summary</label>
+                            <div class="d-flex justify-content-between align-items-center mb-1">
+                                <label class="form-label small fw-bold mb-0">Description / Summary</label>
+                                <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-2" id="btn-lookup-desc" onclick="fetchDescriptionSeparately()" title="Look up description separately">
+                                    <i class="bi bi-magic me-1"></i> Look Up Description
+                                </button>
+                            </div>
                             <textarea name="description" id="reg-description" class="form-control" rows="3" placeholder="Book synopsis or summary..."></textarea>
+                            <div id="desc-lookup-status" class="small text-muted mt-1"></div>
                         </div>
                     </div>
 

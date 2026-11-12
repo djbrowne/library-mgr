@@ -1,7 +1,7 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, session, current_app
 from app.db import db
 from app.models import Title, BookCopy, User, Hold, utc_now
-from app.services.metadata_service import clean_isbn, fetch_book_metadata
+from app.services.metadata_service import clean_isbn, fetch_book_metadata, fetch_book_description
 from app.services.audit_service import record_audit
 
 bp = Blueprint('catalog', __name__)
@@ -59,6 +59,16 @@ def lookup_isbn():
     data['already_in_catalog'] = existing_title is not None
     data['existing_copies_count'] = existing_title.copies.count() if existing_title else 0
     return jsonify(data)
+
+@bp.route('/lookup-description')
+def lookup_description():
+    """Separate endpoint to specifically query/re-fetch book description."""
+    isbn = request.args.get('isbn', '').strip()
+    title = request.args.get('title', '').strip()
+    authors = request.args.get('authors', '').strip()
+    clean = clean_isbn(isbn)
+    desc = fetch_book_description(clean, title=title, authors=authors)
+    return jsonify({'description': desc or ''})
 
 @bp.route('/register', methods=['GET', 'POST'])
 def register():

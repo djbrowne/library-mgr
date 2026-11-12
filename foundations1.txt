@@ -1,0 +1,13 @@
+#Final notes
+--plan and propose a solution for this project and do not make any changes or start development without my approval.  Ask any questions needed for clarifications
+or gaps in the requirements.
+
+--are there any hard coded paths in this project?  any secrets ? any thing else that should not be pushed to github or that would break operation on another similar machine ?
+
+--Once this is completed and tested ask if this can be committed to a new repo in github.
+
+--always implement a database schema versioning capability when usng a database.  this should ensure backward compatibility and a means to merge and unmerge different instances of the databses
+
+--add a tagging capability to the project to allow users to tag items and maintain as metadata in the database for each item.  
+	---tags should be assigned initially on best efforts and editable by admins and users 
+

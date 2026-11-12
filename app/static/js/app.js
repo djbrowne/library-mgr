@@ -123,6 +123,10 @@ function performIsbnLookup() {
             document.getElementById('reg-publisher').value = data.publisher || '';
             document.getElementById('reg-publish-year').value = data.publish_year || '';
             document.getElementById('reg-description').value = data.description || '';
+            if (!data.description) {
+                // Look up description separately if missing from initial metadata
+                fetchDescriptionSeparately(true);
+            }
 
             const previewImg = document.getElementById('cover-preview-img');
             const previewHolder = document.getElementById('cover-preview-container');
@@ -147,6 +151,50 @@ function performIsbnLookup() {
         .catch(err => {
             if (statusText) {
                 statusText.innerHTML = '<span class="text-warning">Could not fetch online metadata. You can enter details manually.</span>';
+            }
+        });
+}
+
+function fetchDescriptionSeparately(isAuto = false) {
+    const isbnInput = document.getElementById('reg-isbn');
+    const titleInput = document.getElementById('reg-title');
+    const authorsInput = document.getElementById('reg-authors');
+    const descTextarea = document.getElementById('reg-description');
+    const statusEl = document.getElementById('desc-lookup-status');
+
+    const isbn = isbnInput ? isbnInput.value.trim() : '';
+    const title = titleInput ? titleInput.value.trim() : '';
+    const authors = authorsInput ? authorsInput.value.trim() : '';
+
+    if (!isbn && !title) {
+        if (statusEl) statusEl.innerHTML = '<span class="text-danger">Enter ISBN or Title first.</span>';
+        return;
+    }
+
+    if (statusEl) {
+        statusEl.innerHTML = '<span class="text-primary"><span class="spinner-border spinner-border-sm me-1"></span> Searching separate description sources...</span>';
+    }
+
+    const params = new URLSearchParams({ isbn, title, authors });
+    fetch(`/catalog/lookup-description?${params.toString()}`)
+        .then(res => res.json())
+        .then(data => {
+            if (data.description && descTextarea) {
+                descTextarea.value = data.description;
+                if (statusEl) {
+                    statusEl.innerHTML = '<span class="text-success"><i class="bi bi-check-circle me-1"></i> Description found and loaded!</span>';
+                }
+            } else {
+                if (statusEl && !isAuto) {
+                    statusEl.innerHTML = '<span class="text-muted">No external description found. You may enter one manually.</span>';
+                } else if (statusEl && isAuto) {
+                    statusEl.innerHTML = '';
+                }
+            }
+        })
+        .catch(err => {
+            if (statusEl && !isAuto) {
+                statusEl.innerHTML = '<span class="text-warning">Could not fetch separate description.</span>';
             }
         });
 }
