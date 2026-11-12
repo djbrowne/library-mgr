@@ -98,6 +98,16 @@ def fetch_book_description(isbn: str, title: str = None, authors: str = None, wo
     clean = clean_isbn(isbn)
     raw_data = raw_data or {}
 
+    if not title or not raw_data:
+        try:
+            r = requests.get(f"https://openlibrary.org/isbn/{clean}.json", headers=HEADERS, timeout=4)
+            if r.status_code == 200:
+                raw_data = r.json()
+                if not title:
+                    title = raw_data.get("title")
+        except Exception:
+            pass
+
     # 1. Check Open Library Work record
     if not work_key and raw_data.get("works"):
         work_key = raw_data["works"][0].get("key")
