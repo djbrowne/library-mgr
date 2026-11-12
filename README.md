@@ -166,4 +166,11 @@ AUDIT_LOGS (Permanent Event History)
 ## 4. Hardware & Barcode Scanning Support
 
 - **Hardware Barcode Scanners (USB/Bluetooth HID)**: Input fields use autofocus and Enter-key submission handlers, allowing rapid one-click checkout and checkin.
-- **Camera Barcode Scanning**: Web-based barcode reader hook in checkout and checkin interfaces using HTML5 `getUserMedia` and the `BarcodeDetector` API.
+- **Integrated Camera Barcode Scanning**:
+  - Live WebRTC camera feed streaming from the integrated webcam (`/dev/video0`) with targeting reticle and auto-scanning.
+  - Server-side multi-pass image decoding pipeline powered by `pyzbar` and OpenCV (grayscale, CLAHE contrast enhancement, Otsu thresholding, and multi-angle rotation).
+  - Works across all browsers without requiring experimental browser flags.
+  - Direct Linux host device capture via `/api/capture-camera`.
+  - Full **JPG/PNG image file upload and drag-and-drop** support via `/api/scan-barcode` to decode book photos or screenshots.
+  - Available across Book Registration, Check-Out, Check-In, and Catalog Search.
+  - Automatic audio-visual confirmation beep and field auto-fill.

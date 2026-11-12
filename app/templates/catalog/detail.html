@@ -13,8 +13,8 @@
     <!-- Book Metadata Overview -->
     <div class="col-md-4 col-lg-3 text-center">
         <div class="card p-3 shadow-sm border-0 bg-white">
-            {% if title.cover_image_path %}
-                <img src="{{ url_for('static', filename=title.cover_image_path) }}" class="img-fluid rounded shadow-sm mb-3 mx-auto" style="max-height: 320px;" alt="Cover Art">
+            {% if title.display_cover_path %}
+                <img src="{{ url_for('static', filename=title.display_cover_path) }}" class="img-fluid rounded shadow-sm mb-3 mx-auto" style="max-height: 320px;" alt="Cover Art">
             {% else %}
                 <div class="p-5 bg-light rounded text-muted mb-3">
                     <i class="bi bi-image fs-1 d-block mb-2"></i>

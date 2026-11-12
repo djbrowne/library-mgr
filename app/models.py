@@ -52,6 +52,19 @@ class Title(db.Model):
     def total_copies_count(self):
         return self.copies.filter(BookCopy.status.notin_(['removed'])).count()
 
+    @property
+    def display_cover_path(self):
+        if self.cover_image_path:
+            return self.cover_image_path
+        try:
+            from flask import current_app
+            covers_dir = current_app.config.get('COVERS_DIR')
+            if covers_dir and (covers_dir / f"{self.isbn}.jpg").exists():
+                return f"covers/{self.isbn}.jpg"
+        except Exception:
+            pass
+        return None
+
 class BookCopy(db.Model):
     __tablename__ = 'book_copies'
 

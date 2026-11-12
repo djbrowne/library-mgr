@@ -24,16 +24,6 @@
                 </div>
             </div>
 
-            <!-- Camera Video Feed Container -->
-            <div id="scanner-container" class="border rounded p-3 mb-3 bg-light text-center d-none">
-                <div class="d-flex justify-content-between align-items-center mb-2">
-                    <span class="small fw-bold"><i class="bi bi-camera-video me-1"></i> Live Barcode Camera Scanner</span>
-                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="stopCameraScanner()">Close Camera</button>
-                </div>
-                <video id="scanner-video" class="w-100 rounded" style="max-height: 240px; background: #000;"></video>
-                <div id="scanner-status" class="small text-muted mt-1">Point barcode at camera...</div>
-            </div>
-
             <form action="{{ url_for('circulation.checkin') }}" method="POST">
                 <div class="row g-3">
                     <div class="col-12">
@@ -48,7 +38,7 @@
                                    placeholder="Scan barcode or type ISBN / Copy ID..." 
                                    data-autofocus 
                                    required>
-                            <button type="button" class="btn btn-outline-secondary" title="Scan with Camera" onclick="startCameraScanner('checkin_identifier')">
+                            <button type="button" class="btn btn-outline-secondary" title="Scan with Camera" onclick="openBarcodeScanner('checkin_identifier')">
                                 <i class="bi bi-camera"></i>
                             </button>
                         </div>

@@ -1,0 +1,38 @@
+#goal
+new project to build a web app - can be based on flask if appropriate, to manage a small library of books. 
+
+#requirements
+each user will have a 4 numeric digit identity
+each book should be identified by its ISBN
+look up of ISBN for each each entered book to display its cover art, title, author, description.  store this locally
+new books should be registered into the database ( sqlite3 ) with timestamp and which user did it and the present condition of the book ( new, good, damaged )
+the users can search for books held by the library and their current status (availabe, borrowed, borrowed and on hold for other user)
+when taking a book out users should enter their user ID and the books ISBN (bar code scanner to be used in future)
+on check in the user should just enter the ISBN ( or scan) and place it in the library room for re-shelving
+there should be a reconciliation page to allow administrators to adjust the status and condition of the book ( in case users forget to check it out )
+reporting of what books are out, in a particular condition, or check out history of a specific books will be needed
+lost or removed books should be disabled in the database by the adminonly but all history kept for reference
+tracking of book movement and user history should be saved permanently ( but not user searches)
+tracking of book location should be planned for in the database 
+
+#future plans
+hardware scanning devices will be used for user and book scanning
+email reminders to users on time on upcoming return dates or overdue books  based on existing email addresses 
+an image of a ISBN in jpg format or from a live video feed from an attached camera should be enough to identify a book, or user ID barcode
+
+ 
+#technology 
+these are intially proposed tech choices but canbe overturned based on sound architectural reasoning
+database - sqlite3
+OS - ubuntu linux
+App - flask & js, ajax
+
+
+#Final notes
+--plan and propose a solution for this project and do not make any changes or start development without my approval.  Ask any questions needed for clarifications
+or gaps in the requirements.
+
+--are there any hard coded paths in this project?  any secrets ? any thing else that should not be pushed to github or that would break operation on another similar machine ?
+
+--Once this is completed and tested ask if this can be committed to a new repo in github. 
+

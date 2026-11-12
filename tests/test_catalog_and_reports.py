@@ -64,3 +64,21 @@ def test_reports_endpoints(client, app):
         r5 = client.get('/reports/audit-log')
         assert r5.status_code == 200
         assert b"Permanent Audit Trail" in r5.data
+
+def test_cover_art_persistence_on_registration(client, app):
+    with app.app_context():
+        # Register a book passing cover_image_path
+        resp = client.post('/catalog/register', data={
+            'isbn': '9780134494166',
+            'title': 'Clean Architecture',
+            'authors': 'Robert C. Martin',
+            'cover_image_path': 'covers/9780134494166.jpg',
+            'user_id': '0001',
+            'condition': 'new'
+        }, follow_redirects=True)
+        assert resp.status_code == 200
+
+        title = Title.query.filter_by(isbn='9780134494166').first()
+        assert title is not None
+        assert title.cover_image_path == 'covers/9780134494166.jpg'
+        assert title.display_cover_path == 'covers/9780134494166.jpg'

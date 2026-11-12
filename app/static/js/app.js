@@ -58,6 +58,42 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('modal-location').value = location;
         });
     }
+
+    // 5. Drag & drop setup for file dropzone
+    const dropzone = document.getElementById('scanner-file-dropzone');
+    if (dropzone) {
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropzone.addEventListener(eventName, (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                dropzone.classList.add('drag-active');
+            }, false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropzone.addEventListener(eventName, (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                dropzone.classList.remove('drag-active');
+            }, false);
+        });
+
+        dropzone.addEventListener('drop', (e) => {
+            const dt = e.dataTransfer;
+            const files = dt.files;
+            if (files && files.length > 0) {
+                processBarcodeImageFile(files[0]);
+            }
+        });
+    }
+
+    // Clean up camera stream if user dismisses modal via Escape key or backdrop click
+    const scannerModalEl = document.getElementById('barcodeScannerModal');
+    if (scannerModalEl) {
+        scannerModalEl.addEventListener('hidden.bs.modal', () => {
+            closeBarcodeScanner();
+        });
+    }
 });
 
 function performIsbnLookup() {
@@ -90,6 +126,10 @@ function performIsbnLookup() {
 
             const previewImg = document.getElementById('cover-preview-img');
             const previewHolder = document.getElementById('cover-preview-container');
+            const coverInput = document.getElementById('reg-cover-path');
+            if (coverInput && data.cover_image_path) {
+                coverInput.value = data.cover_image_path;
+            }
             if (data.cover_image_path && previewImg) {
                 previewImg.src = `/static/${data.cover_image_path}`;
                 previewImg.classList.remove('d-none');
@@ -111,66 +151,479 @@ function performIsbnLookup() {
         });
 }
 
-// 5. Camera Barcode Scanner using native BarcodeDetector API (Supported in Chrome/Edge/Android)
-let videoStream = null;
-async function startCameraScanner(targetInputId) {
-    const video = document.getElementById('scanner-video');
-    const container = document.getElementById('scanner-container');
-    const status = document.getElementById('scanner-status');
+// =========================================================================
+// Real-Time High-Definition Barcode Scanner & JPG Upload Engine
+// =========================================================================
 
+let activeScannerTargetInputId = null;
+let cameraMediaStream = null;
+let zxingReader = null;
+let autoScanTimer = null;
+let isScanInFlight = false;
+let currentSelectedCameraId = null;
+let isSuccessTriggered = false;
+
+/**
+ * Open the universal Barcode Scanner Modal for a specific input field.
+ */
+function openBarcodeScanner(targetInputId) {
+    activeScannerTargetInputId = targetInputId;
+    isSuccessTriggered = false;
+
+    const modalEl = document.getElementById('barcodeScannerModal');
+    if (!modalEl) {
+        alert("Barcode scanner modal element not found in DOM.");
+        return;
+    }
+
+    const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+    modal.show();
+
+    resetScannerUI();
+    startIntegratedCamera();
+}
+
+/**
+ * Backwards-compatibility alias for older templates.
+ */
+function startCameraScanner(targetInputId) {
+    openBarcodeScanner(targetInputId);
+}
+
+/**
+ * Reset scanner dialog UI components.
+ */
+function resetScannerUI() {
+    isScanInFlight = false;
+    isSuccessTriggered = false;
+
+    const targetBox = document.getElementById('modal-scanner-target-box');
+    if (targetBox) targetBox.classList.remove('success');
+
+    const spinner = document.getElementById('modal-scanner-spinner');
+    if (spinner) spinner.classList.remove('d-none');
+
+    const statusText = document.getElementById('modal-scanner-status-text');
+    if (statusText) {
+        statusText.className = '';
+        statusText.textContent = "Point the book's ISBN barcode at the camera lens...";
+    }
+
+    const previewContainer = document.getElementById('file-preview-container');
+    if (previewContainer) previewContainer.classList.add('d-none');
+
+    const snapPreview = document.getElementById('snapshot-preview-container');
+    if (snapPreview) snapPreview.classList.add('d-none');
+}
+
+/**
+ * Populate the camera switcher dropdown with available devices.
+ */
+function populateCameraDropdownWithDevices(videoDevices, preferredDeviceId = null) {
+    const select = document.getElementById('scanner-camera-select');
+    if (!select || !videoDevices || videoDevices.length === 0) return;
+
+    select.innerHTML = '';
+    videoDevices.forEach((dev, idx) => {
+        const opt = document.createElement('option');
+        opt.value = dev.deviceId;
+        opt.textContent = dev.label || `Camera ${idx + 1}`;
+        if (preferredDeviceId && dev.deviceId === preferredDeviceId) {
+            opt.selected = true;
+        } else if (!preferredDeviceId && currentSelectedCameraId && dev.deviceId === currentSelectedCameraId) {
+            opt.selected = true;
+        } else if (!preferredDeviceId && !currentSelectedCameraId && idx === 0) {
+            opt.selected = true;
+        }
+        select.appendChild(opt);
+    });
+}
+
+/**
+ * Switch camera device from dropdown.
+ */
+function switchCameraDevice(deviceId) {
+    currentSelectedCameraId = deviceId;
+    stopActiveStreams();
+    startIntegratedCamera(deviceId);
+}
+
+/**
+ * Stop active camera streams and readers without closing the modal.
+ */
+function stopActiveStreams() {
+    if (zxingReader) {
+        try { zxingReader.reset(); } catch(e) {}
+    }
+    if (autoScanTimer) {
+        clearInterval(autoScanTimer);
+        autoScanTimer = null;
+    }
+    if (cameraMediaStream) {
+        cameraMediaStream.getTracks().forEach(track => {
+            try { track.stop(); } catch(e) {}
+        });
+        cameraMediaStream = null;
+    }
+    const video = document.getElementById('modal-scanner-video');
+    if (video) {
+        video.srcObject = null;
+    }
+}
+
+/**
+ * Initialize WebRTC stream for the integrated camera.
+ * Uses client-side ZXing continuous video reader if available,
+ * with server-side snapshot fallback.
+ */
+async function startIntegratedCamera(preferredDeviceId = null) {
+    const video = document.getElementById('modal-scanner-video');
+    if (!video) return;
+
+    // 1. Primary Engine: Client-Side ZXing BrowserMultiFormatReader
+    if (window.ZXing && window.ZXing.BrowserMultiFormatReader) {
+        try {
+            if (!zxingReader) {
+                const hints = new Map();
+                const formats = [
+                    ZXing.BarcodeFormat.EAN_13,
+                    ZXing.BarcodeFormat.EAN_8,
+                    ZXing.BarcodeFormat.UPC_A,
+                    ZXing.BarcodeFormat.UPC_E,
+                    ZXing.BarcodeFormat.CODE_128,
+                    ZXing.BarcodeFormat.CODE_39,
+                    ZXing.BarcodeFormat.QR_CODE
+                ];
+                hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, formats);
+                hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
+                zxingReader = new ZXing.BrowserMultiFormatReader(hints, 250);
+            }
+
+            const videoInputDevices = await zxingReader.getVideoInputDevices();
+            populateCameraDropdownWithDevices(videoInputDevices, preferredDeviceId);
+
+            const chosenDeviceId = preferredDeviceId || currentSelectedCameraId || (videoInputDevices.length > 0 ? videoInputDevices[0].deviceId : undefined);
+
+            updateScannerStatus("Live scanner active. Hold book steady 8–12 inches away...", "primary");
+
+            zxingReader.decodeFromVideoDevice(chosenDeviceId, 'modal-scanner-video', (result, error) => {
+                if (result && !isSuccessTriggered) {
+                    const barcode = result.getText();
+                    const format = result.getBarcodeFormat();
+                    handleBarcodeSuccess(barcode, format ? format.toString() : 'EAN13');
+                }
+            });
+
+            // Also run a background periodic snapshot check against the backend zxing-cpp engine
+            // in case the browser reader has trouble with a specific reflection/tilt
+            if (autoScanTimer) clearInterval(autoScanTimer);
+            autoScanTimer = setInterval(() => {
+                const toggle = document.getElementById('scanner-autoscan-toggle');
+                if (toggle && toggle.checked && !isSuccessTriggered) {
+                    captureAndSendFrame(false);
+                }
+            }, 800);
+
+            return;
+        } catch (zxingErr) {
+            console.warn("ZXing browser engine initialization error:", zxingErr);
+        }
+    }
+
+    // 2. Fallback Engine: Standard WebRTC getUserMedia + server-side decoding
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        alert("Camera access is not supported by your browser or environment.");
+        updateScannerStatus("Camera access is not supported by your browser.", "danger");
         return;
     }
 
     try {
-        if (!('BarcodeDetector' in window)) {
-            if (status) status.textContent = "BarcodeDetector API not natively supported on this browser. Use USB hardware scanner or manual input.";
+        const videoConstraints = {
+            width: { ideal: 1920, min: 1280 },
+            height: { ideal: 1080, min: 720 }
+        };
+
+        const targetDevice = preferredDeviceId || currentSelectedCameraId;
+        if (targetDevice) {
+            videoConstraints.deviceId = { exact: targetDevice };
         }
-        
-        container.classList.remove('d-none');
-        videoStream = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: 'environment' }
+
+        cameraMediaStream = await navigator.mediaDevices.getUserMedia({
+            video: videoConstraints,
+            audio: false
         });
-        video.srcObject = videoStream;
-        video.play();
 
-        if ('BarcodeDetector' in window) {
-            const barcodeDetector = new window.BarcodeDetector({
-                formats: ['ean_13', 'ean_8', 'code_128', 'code_39', 'upc_a']
-            });
+        video.srcObject = cameraMediaStream;
+        await video.play();
 
-            const scanInterval = setInterval(async () => {
-                if (!videoStream) {
-                    clearInterval(scanInterval);
-                    return;
-                }
-                try {
-                    const barcodes = await barcodeDetector.detect(video);
-                    if (barcodes.length > 0) {
-                        const code = barcodes[0].rawValue;
-                        const targetInput = document.getElementById(targetInputId);
-                        if (targetInput) {
-                            targetInput.value = code;
-                            stopCameraScanner();
-                            targetInput.form.submit();
-                        }
-                    }
-                } catch (e) {
-                    // detection loop error
-                }
-            }, 300);
-        }
+        updateScannerStatus("Camera active. Align barcode in box (keep 8–12 inches away)...", "primary");
+
+        if (autoScanTimer) clearInterval(autoScanTimer);
+        autoScanTimer = setInterval(() => {
+            const toggle = document.getElementById('scanner-autoscan-toggle');
+            if (toggle && toggle.checked && !isSuccessTriggered) {
+                captureAndSendFrame(false);
+            }
+        }, 600);
+
     } catch (err) {
-        alert("Could not access camera: " + err.message);
+        updateScannerStatus(`Camera access failed: ${err.message}. You can upload a JPG photo of the barcode.`, "warning");
     }
 }
 
-function stopCameraScanner() {
-    const container = document.getElementById('scanner-container');
-    if (container) container.classList.add('d-none');
-    if (videoStream) {
-        videoStream.getTracks().forEach(track => track.stop());
-        videoStream = null;
+/**
+ * Grab video frame to canvas and send to backend /api/scan-barcode.
+ */
+function captureAndSendFrame(isManualSnap = false) {
+    if (isScanInFlight || isSuccessTriggered) return;
+
+    const video = document.getElementById('modal-scanner-video');
+    const canvas = document.getElementById('scanner-capture-canvas');
+    if (!video || !canvas || video.readyState < 2) return;
+
+    const w = video.videoWidth;
+    const h = video.videoHeight;
+    if (!w || !h || w <= 0 || h <= 0) return;
+
+    canvas.width = w;
+    canvas.height = h;
+
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0, w, h);
+
+    const base64Data = canvas.toDataURL('image/jpeg', 0.90);
+
+    if (isManualSnap) {
+        const snapImg = document.getElementById('snapshot-preview-img');
+        const snapContainer = document.getElementById('snapshot-preview-container');
+        if (snapImg && snapContainer) {
+            snapImg.src = base64Data;
+            snapContainer.classList.remove('d-none');
+        }
+        updateScannerStatus("Analyzing snapshot frame with backend multi-engine decoder...", "info");
+    }
+
+    isScanInFlight = true;
+
+    fetch('/api/scan-barcode', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image: base64Data })
+    })
+    .then(res => res.json())
+    .then(data => {
+        isScanInFlight = false;
+        if (data.found && data.barcode && !isSuccessTriggered) {
+            handleBarcodeSuccess(data.barcode, data.type);
+        } else if (isManualSnap) {
+            updateScannerStatus(data.error || "No barcode found in snapshot. Check focus/distance and try again.", "warning");
+        }
+    })
+    .catch(err => {
+        isScanInFlight = false;
+        if (isManualSnap) {
+            updateScannerStatus(`Scan request error: ${err.message}`, "danger");
+        }
+    });
+}
+
+/**
+ * Manual trigger for snapping and scanning current frame.
+ */
+function triggerManualSnapshot() {
+    captureAndSendFrame(true);
+}
+
+/**
+ * Directly query the host's Linux V4L2 device (/dev/video0) on the server.
+ */
+function triggerDirectHostCapture() {
+    updateScannerStatus("Querying host camera (/dev/video0)...", "info");
+
+    fetch('/api/capture-camera', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ device: 0 })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.found && data.barcode && !isSuccessTriggered) {
+            handleBarcodeSuccess(data.barcode, data.type);
+        } else {
+            if (data.preview_jpg_base64) {
+                const snapImg = document.getElementById('snapshot-preview-img');
+                const snapContainer = document.getElementById('snapshot-preview-container');
+                if (snapImg && snapContainer) {
+                    snapImg.src = data.preview_jpg_base64;
+                    snapContainer.classList.remove('d-none');
+                }
+            }
+            updateScannerStatus(data.error || "No barcode found on /dev/video0. Close browser stream or adjust position.", "warning");
+        }
+    })
+    .catch(err => {
+        updateScannerStatus(`Host camera error: ${err.message}`, "danger");
+    });
+}
+
+/**
+ * Handle file input selection for JPG/PNG barcode images.
+ */
+function handleFileBarcodeUpload(event) {
+    const file = event.target.files[0];
+    if (file) {
+        processBarcodeImageFile(file);
+    }
+}
+
+/**
+ * Process and send an image file to /api/scan-barcode.
+ */
+function processBarcodeImageFile(file) {
+    if (!file || !file.type.startsWith('image/')) {
+        updateScannerStatus("Please select a valid image file (JPG, PNG, WebP).", "danger");
+        return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        const previewImg = document.getElementById('file-preview-img');
+        const previewContainer = document.getElementById('file-preview-container');
+        if (previewImg && previewContainer) {
+            previewImg.src = e.target.result;
+            previewContainer.classList.remove('d-none');
+        }
+    };
+    reader.readAsDataURL(file);
+
+    updateScannerStatus(`Uploading and decoding ${file.name}...`, "info");
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    fetch('/api/scan-barcode', {
+        method: 'POST',
+        body: formData
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.found && data.barcode && !isSuccessTriggered) {
+            handleBarcodeSuccess(data.barcode, data.type);
+        } else {
+            updateScannerStatus(data.error || "No barcode detected in uploaded image. Ensure the barcode is clear and unblurred.", "warning");
+        }
+    })
+    .catch(err => {
+        updateScannerStatus(`Upload decode failed: ${err.message}`, "danger");
+    });
+}
+
+/**
+ * When a barcode is successfully detected.
+ */
+function handleBarcodeSuccess(barcode, barcodeType) {
+    if (isSuccessTriggered) return;
+    isSuccessTriggered = true;
+
+    // 1. Play success audio chime
+    playScannerBeep();
+
+    // 2. Visual success state
+    const targetBox = document.getElementById('modal-scanner-target-box');
+    if (targetBox) targetBox.classList.add('success');
+
+    const spinner = document.getElementById('modal-scanner-spinner');
+    if (spinner) spinner.classList.add('d-none');
+
+    const statusText = document.getElementById('modal-scanner-status-text');
+    if (statusText) {
+        statusText.innerHTML = `<i class="bi bi-check-circle-fill text-success me-1"></i> <strong>Detected:</strong> ${barcode} <span class="badge bg-success ms-1">${barcodeType || 'ISBN'}</span>`;
+    }
+
+    // Stop streams and readers
+    stopActiveStreams();
+
+    // 3. Populate target input element
+    if (activeScannerTargetInputId) {
+        const targetInput = document.getElementById(activeScannerTargetInputId);
+        if (targetInput) {
+            targetInput.value = barcode;
+
+            targetInput.dispatchEvent(new Event('input', { bubbles: true }));
+            targetInput.dispatchEvent(new Event('change', { bubbles: true }));
+
+            // If it's registration, trigger online metadata lookup
+            if (activeScannerTargetInputId === 'reg-isbn') {
+                setTimeout(() => performIsbnLookup(), 200);
+            }
+
+            const nextFocusId = targetInput.getAttribute('data-next-focus');
+            if (nextFocusId) {
+                const nextInput = document.getElementById(nextFocusId);
+                if (nextInput) setTimeout(() => nextInput.focus(), 500);
+            }
+        }
+    }
+
+    // 4. Automatically close modal after brief confirmation display
+    setTimeout(() => {
+        closeBarcodeScanner();
+    }, 750);
+}
+
+/**
+ * Update the scanner feedback status banner.
+ */
+function updateScannerStatus(message, alertType) {
+    const statusText = document.getElementById('modal-scanner-status-text');
+    if (statusText) {
+        statusText.textContent = message;
+    }
+    const feedback = document.getElementById('modal-scanner-feedback');
+    if (feedback) {
+        feedback.className = `alert alert-${alertType || 'secondary'} d-flex align-items-center py-2 px-3 mt-3 mb-0 small`;
+    }
+}
+
+/**
+ * Close scanner, stop video tracks, reset readers, and close modal.
+ */
+function closeBarcodeScanner() {
+    stopActiveStreams();
+    isScanInFlight = false;
+
+    const modalEl = document.getElementById('barcodeScannerModal');
+    if (modalEl) {
+        const modalInstance = bootstrap.Modal.getInstance(modalEl);
+        if (modalInstance) {
+            modalInstance.hide();
+        }
+    }
+}
+
+/**
+ * Synthesizes a crisp electronic beep on successful scan using Web Audio API.
+ */
+function playScannerBeep() {
+    try {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (!AudioCtx) return;
+        const ctx = new AudioCtx();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(880, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(1760, ctx.currentTime + 0.12);
+
+        gain.gain.setValueAtTime(0.25, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.12);
+
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+
+        osc.start();
+        osc.stop(ctx.currentTime + 0.12);
+    } catch (e) {
+        // AudioContext may be blocked before first user gesture
     }
 }

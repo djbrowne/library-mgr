@@ -146,8 +146,8 @@
                         {% for title in recent_titles %}
                         <div class="col-sm-6">
                             <div class="d-flex p-2 border rounded bg-light align-items-center">
-                                {% if title.cover_image_path %}
-                                    <img src="{{ url_for('static', filename=title.cover_image_path) }}" class="book-cover-thumb me-2" alt="Cover">
+                                {% if title.display_cover_path %}
+                                    <img src="{{ url_for('static', filename=title.display_cover_path) }}" class="book-cover-thumb me-2" alt="Cover">
                                 {% else %}
                                     <div class="book-cover-thumb cover-placeholder me-2">No Cover</div>
                                 {% endif %}

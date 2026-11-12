@@ -21,7 +21,10 @@
         <div class="col-md-6">
             <div class="input-group">
                 <span class="input-group-text bg-light"><i class="bi bi-search text-muted"></i></span>
-                <input type="text" name="q" class="form-control" placeholder="Search by Title, Author, or ISBN..." value="{{ query }}">
+                <input type="text" name="q" id="catalog-search-input" class="form-control" placeholder="Search by Title, Author, or ISBN..." value="{{ query }}">
+                <button type="button" class="btn btn-outline-secondary" title="Scan ISBN with Camera" onclick="openBarcodeScanner('catalog-search-input')">
+                    <i class="bi bi-camera"></i>
+                </button>
             </div>
         </div>
         <div class="col-md-3">
@@ -58,8 +61,8 @@
         <div class="col-md-6 col-lg-4">
             <div class="card h-100 shadow-sm border-0 p-3">
                 <div class="d-flex align-items-start">
-                    {% if title.cover_image_path %}
-                        <img src="{{ url_for('static', filename=title.cover_image_path) }}" class="book-cover-thumb me-3" alt="Cover">
+                    {% if title.display_cover_path %}
+                        <img src="{{ url_for('static', filename=title.display_cover_path) }}" class="book-cover-thumb me-3" alt="Cover">
                     {% else %}
                         <div class="book-cover-thumb cover-placeholder me-3">
                             <span>No Cover</span>

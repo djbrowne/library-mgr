@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, session
+from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, session, current_app
 from app.db import db
 from app.models import Title, BookCopy, User, Hold, utc_now
 from app.services.metadata_service import clean_isbn, fetch_book_metadata
@@ -90,6 +90,8 @@ def register():
 
         # Check or fetch title
         title = Title.query.filter_by(isbn=clean).first()
+        cover_path = request.form.get('cover_image_path', '').strip() or None
+
         if not title:
             # If metadata not manually provided in form, fetch it
             if not title_text:
@@ -99,9 +101,17 @@ def register():
                 desc_text = meta.get('description', '')
                 publisher_text = meta.get('publisher', '')
                 publish_year_text = meta.get('publish_year', '')
-                cover_path = meta.get('cover_image_path')
-            else:
-                cover_path = None
+                if not cover_path:
+                    cover_path = meta.get('cover_image_path')
+
+            # Ensure cover image is linked if it exists locally or can be fetched
+            if not cover_path:
+                covers_dir = current_app.config.get('COVERS_DIR')
+                if covers_dir and (covers_dir / f"{clean}.jpg").exists():
+                    cover_path = f"covers/{clean}.jpg"
+                else:
+                    meta = fetch_book_metadata(clean)
+                    cover_path = meta.get('cover_image_path')
 
             title = Title(
                 isbn=clean,
@@ -114,6 +124,18 @@ def register():
             )
             db.session.add(title)
             db.session.flush()
+        else:
+            # If title exists but lacks cover art, attach cover if available
+            if not title.cover_image_path:
+                covers_dir = current_app.config.get('COVERS_DIR')
+                if covers_dir and (covers_dir / f"{clean}.jpg").exists():
+                    title.cover_image_path = f"covers/{clean}.jpg"
+                elif cover_path:
+                    title.cover_image_path = cover_path
+                else:
+                    meta = fetch_book_metadata(clean)
+                    if meta.get('cover_image_path'):
+                        title.cover_image_path = meta.get('cover_image_path')
 
         # Determine next copy number (e.g. ISBN-1, ISBN-2)
         existing_copies = title.copies.all()

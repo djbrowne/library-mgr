@@ -18,6 +18,7 @@
 
             <form action="{{ url_for('catalog.register') }}" method="POST">
                 <div class="card bg-light border-0 p-3 mb-4">
+                    <input type="hidden" name="cover_image_path" id="reg-cover-path">
                     <label class="form-label fw-bold"><i class="bi bi-upc-scan text-primary me-1"></i> ISBN (ISBN-10 or ISBN-13)</label>
                     <div class="input-group">
                         <input type="text" 
@@ -27,6 +28,9 @@
                                placeholder="e.g. 9780132350884" 
                                data-autofocus 
                                required>
+                        <button type="button" class="btn btn-outline-secondary" title="Scan with Camera" onclick="openBarcodeScanner('reg-isbn')">
+                            <i class="bi bi-camera"></i> Scan Camera
+                        </button>
                         <button type="button" class="btn btn-primary" id="btn-lookup-isbn">
                             <i class="bi bi-search me-1"></i> Look Up Online
                         </button>

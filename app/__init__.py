@@ -21,12 +21,14 @@ def create_app(config_class=Config):
     from app.routes.catalog import bp as catalog_bp
     from app.routes.admin import bp as admin_bp
     from app.routes.reports import bp as reports_bp
+    from app.routes.scanner import bp as scanner_bp
 
     app.register_blueprint(main_bp)
     app.register_blueprint(circulation_bp, url_prefix='/circulation')
     app.register_blueprint(catalog_bp, url_prefix='/catalog')
     app.register_blueprint(admin_bp, url_prefix='/admin')
     app.register_blueprint(reports_bp, url_prefix='/reports')
+    app.register_blueprint(scanner_bp)
 
     @app.context_processor
     def inject_auth_user():
