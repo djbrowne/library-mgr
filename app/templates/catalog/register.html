@@ -59,6 +59,21 @@
                             </div>
                         </div>
 
+                        <div class="row g-2 mb-3">
+                            <div class="col-md-6">
+                                <label class="form-label small fw-bold">Genre</label>
+                                <select name="genre" id="reg-genre" class="form-select">
+                                    {% for g in genres %}
+                                        <option value="{{ g }}" {% if g == 'General' %}selected{% endif %}>{{ g }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label small fw-bold">Tags (Comma-separated)</label>
+                                <input type="text" name="tags" id="reg-tags" class="form-control" placeholder="e.g. software, python, design">
+                            </div>
+                        </div>
+
                         <div class="mb-3">
                             <label class="form-label small fw-bold">Publisher</label>
                             <input type="text" name="publisher" id="reg-publisher" class="form-control" placeholder="Publisher name">

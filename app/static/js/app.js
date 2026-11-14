@@ -123,6 +123,32 @@ function performIsbnLookup() {
             document.getElementById('reg-publisher').value = data.publisher || '';
             document.getElementById('reg-publish-year').value = data.publish_year || '';
             document.getElementById('reg-description').value = data.description || '';
+
+            // Populate Genre and Tags
+            if (data.genre) {
+                const genreSelect = document.getElementById('reg-genre');
+                if (genreSelect) {
+                    let optionExists = false;
+                    for (let i = 0; i < genreSelect.options.length; i++) {
+                        if (genreSelect.options[i].value.toLowerCase() === data.genre.toLowerCase()) {
+                            genreSelect.selectedIndex = i;
+                            optionExists = true;
+                            break;
+                        }
+                    }
+                    if (!optionExists) {
+                        const opt = new Option(data.genre, data.genre, true, true);
+                        genreSelect.add(opt);
+                    }
+                }
+            }
+            if (data.tags && data.tags.length > 0) {
+                const tagsInput = document.getElementById('reg-tags');
+                if (tagsInput) {
+                    tagsInput.value = data.tags.join(', ');
+                }
+            }
+
             if (!data.description) {
                 // Look up description separately if missing from initial metadata
                 fetchDescriptionSeparately(true);
@@ -674,4 +700,112 @@ function playScannerBeep() {
     } catch (e) {
         // AudioContext may be blocked before first user gesture
     }
+}
+
+/**
+ * Add a new tag to the book on the details page.
+ */
+function addTagToBook(isbn) {
+    const input = document.getElementById('new-tag-input');
+    const tag = input ? input.value.trim() : '';
+    const statusEl = document.getElementById('tag-feedback-status');
+
+    if (!tag) return;
+
+    fetch(`/catalog/book/${isbn}/tags`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tag })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            input.value = '';
+            renderTagsList(isbn, data.all_tags);
+            if (statusEl) {
+                statusEl.innerHTML = `<span class="text-success"><i class="bi bi-check-circle"></i> Tag "${data.tag}" added!</span>`;
+                setTimeout(() => statusEl.innerHTML = '', 3000);
+            }
+        } else {
+            if (statusEl) {
+                statusEl.innerHTML = `<span class="text-danger">${data.error || 'Could not add tag'}</span>`;
+            }
+        }
+    })
+    .catch(err => {
+        if (statusEl) statusEl.innerHTML = '<span class="text-danger">Network error adding tag.</span>';
+    });
+}
+
+/**
+ * Remove a tag from the book.
+ */
+function deleteTagFromBook(isbn, tagName) {
+    const statusEl = document.getElementById('tag-feedback-status');
+    fetch(`/catalog/book/${isbn}/tags/${encodeURIComponent(tagName)}/delete`, {
+        method: 'POST'
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            renderTagsList(isbn, data.all_tags);
+            if (statusEl) {
+                statusEl.innerHTML = `<span class="text-muted"><i class="bi bi-trash"></i> Tag removed.</span>`;
+                setTimeout(() => statusEl.innerHTML = '', 2000);
+            }
+        }
+    })
+    .catch(err => {
+        if (statusEl) statusEl.innerHTML = '<span class="text-danger">Error removing tag.</span>';
+    });
+}
+
+/**
+ * Re-render tag pills on the page dynamically.
+ */
+function renderTagsList(isbn, tags) {
+    const container = document.getElementById('book-tags-container');
+    if (!container) return;
+
+    if (!tags || tags.length === 0) {
+        container.innerHTML = '<span class="text-muted small fst-italic">No tags added yet.</span>';
+        return;
+    }
+
+    let html = '';
+    tags.forEach(t => {
+        html += `
+            <span class="badge bg-light text-dark border me-1 mb-1 p-2 d-inline-flex align-items-center">
+                <a href="/catalog/?tag=${encodeURIComponent(t)}" class="text-decoration-none text-dark me-1">#${t}</a>
+                <button type="button" class="btn-close ms-1" style="font-size: 0.55rem;" aria-label="Remove" onclick="deleteTagFromBook('${isbn}', '${t}')"></button>
+            </span>
+        `;
+    });
+    container.innerHTML = html;
+}
+
+/**
+ * Save updated genre directly from details page.
+ */
+function updateBookGenre(isbn, newGenre) {
+    const statusEl = document.getElementById('genre-feedback-status');
+    fetch(`/catalog/book/${isbn}/genre`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ genre: newGenre })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            const badge = document.getElementById('display-genre-badge');
+            if (badge) badge.textContent = data.genre;
+            if (statusEl) {
+                statusEl.innerHTML = '<span class="text-success"><i class="bi bi-check-circle"></i> Genre updated!</span>';
+                setTimeout(() => statusEl.innerHTML = '', 2500);
+            }
+        }
+    })
+    .catch(err => {
+        if (statusEl) statusEl.innerHTML = '<span class="text-danger">Failed to update genre.</span>';
+    });
 }

@@ -1,7 +1,7 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, session, current_app
 from app.db import db
-from app.models import Title, BookCopy, User, Hold, utc_now
-from app.services.metadata_service import clean_isbn, fetch_book_metadata, fetch_book_description
+from app.models import Title, BookCopy, User, Hold, Tag, BookTag, DEFAULT_GENRES, utc_now
+from app.services.metadata_service import clean_isbn, fetch_book_metadata, fetch_book_description, clean_tag_name
 from app.services.audit_service import record_audit
 
 bp = Blueprint('catalog', __name__)
@@ -11,6 +11,8 @@ def search():
     query = request.args.get('q', '').strip()
     status_filter = request.args.get('status', '').strip()
     condition_filter = request.args.get('condition', '').strip()
+    genre_filter = request.args.get('genre', '').strip()
+    tag_filter = request.args.get('tag', '').strip()
 
     titles_query = Title.query
 
@@ -27,6 +29,12 @@ def search():
                 (Title.title.ilike(f"%{query}%")) |
                 (Title.authors.ilike(f"%{query}%"))
             )
+
+    if genre_filter:
+        titles_query = titles_query.filter(Title.genre == genre_filter)
+
+    if tag_filter:
+        titles_query = titles_query.join(Title.book_tags).join(BookTag.tag).filter(Tag.name == tag_filter.lower().strip())
 
     titles = titles_query.order_by(Title.title.asc()).all()
 
@@ -45,7 +53,20 @@ def search():
                 'copies': copies
             })
 
-    return render_template('catalog/search.html', results=results, query=query, status_filter=status_filter, condition_filter=condition_filter)
+    # Get all distinct genres and popular tags for filter suggestions
+    all_tags = Tag.query.order_by(Tag.name.asc()).all()
+
+    return render_template(
+        'catalog/search.html',
+        results=results,
+        query=query,
+        status_filter=status_filter,
+        condition_filter=condition_filter,
+        genre_filter=genre_filter,
+        tag_filter=tag_filter,
+        genres=DEFAULT_GENRES,
+        all_tags=all_tags
+    )
 
 @bp.route('/lookup-isbn')
 def lookup_isbn():
@@ -101,18 +122,25 @@ def register():
         # Check or fetch title
         title = Title.query.filter_by(isbn=clean).first()
         cover_path = request.form.get('cover_image_path', '').strip() or None
+        genre = request.form.get('genre', '').strip()
+        tags_str = request.form.get('tags', '').strip()
 
         if not title:
             # If metadata not manually provided in form, fetch it
-            if not title_text:
+            if not title_text or not genre or not tags_str:
                 meta = fetch_book_metadata(clean)
-                title_text = meta.get('title', f"Book (ISBN: {clean})")
-                authors_text = meta.get('authors', 'Unknown Author')
-                desc_text = meta.get('description', '')
-                publisher_text = meta.get('publisher', '')
-                publish_year_text = meta.get('publish_year', '')
+                if not title_text:
+                    title_text = meta.get('title', f"Book (ISBN: {clean})")
+                    authors_text = meta.get('authors', 'Unknown Author')
+                    desc_text = meta.get('description', '')
+                    publisher_text = meta.get('publisher', '')
+                    publish_year_text = meta.get('publish_year', '')
                 if not cover_path:
                     cover_path = meta.get('cover_image_path')
+                if not genre:
+                    genre = meta.get('genre', 'General')
+                if not tags_str and meta.get('tags'):
+                    tags_str = ", ".join(meta.get('tags'))
 
             # Ensure cover image is linked if it exists locally or can be fetched
             if not cover_path:
@@ -130,10 +158,24 @@ def register():
                 description=desc_text,
                 publisher=publisher_text,
                 publish_year=publish_year_text,
-                cover_image_path=cover_path
+                cover_image_path=cover_path,
+                genre=genre or 'General'
             )
             db.session.add(title)
             db.session.flush()
+
+            # Attach initial tags
+            if tags_str:
+                for raw_t in tags_str.split(','):
+                    c_tag = clean_tag_name(raw_t)
+                    if c_tag:
+                        t_obj = Tag.query.filter_by(name=c_tag).first()
+                        if not t_obj:
+                            t_obj = Tag(name=c_tag)
+                            db.session.add(t_obj)
+                            db.session.flush()
+                        bt = BookTag(isbn=clean, tag_id=t_obj.tag_id, added_by=user.user_id, is_auto_generated=False)
+                        db.session.add(bt)
         else:
             # If title exists but lacks cover art, attach cover if available
             if not title.cover_image_path:
@@ -146,6 +188,8 @@ def register():
                     meta = fetch_book_metadata(clean)
                     if meta.get('cover_image_path'):
                         title.cover_image_path = meta.get('cover_image_path')
+            if genre and (not title.genre or title.genre == 'General'):
+                title.genre = genre
 
         # Determine next copy number (e.g. ISBN-1, ISBN-2)
         existing_copies = title.copies.all()
@@ -179,7 +223,7 @@ def register():
         flash(f"Successfully registered copy '{copy.copy_id}' of '{title.title}'!", "success")
         return redirect(url_for('catalog.detail', isbn=clean))
 
-    return render_template('catalog/register.html')
+    return render_template('catalog/register.html', genres=DEFAULT_GENRES)
 
 @bp.route('/book/<isbn>')
 def detail(isbn):
@@ -187,4 +231,69 @@ def detail(isbn):
     title = Title.query.filter_by(isbn=clean).first_or_404()
     copies = title.copies.order_by(BookCopy.copy_number.asc()).all()
     holds = title.holds.order_by(Hold.placed_at.asc()).all()
-    return render_template('catalog/detail.html', title=title, copies=copies, holds=holds)
+    return render_template('catalog/detail.html', title=title, copies=copies, holds=holds, genres=DEFAULT_GENRES)
+
+@bp.route('/book/<isbn>/tags', methods=['POST'])
+def add_tag(isbn):
+    """Add a free-form tag to a book (open to all users)."""
+    clean = clean_isbn(isbn)
+    title = Title.query.filter_by(isbn=clean).first_or_404()
+    data = request.get_json(silent=True) or request.form
+    raw_tag = data.get('tag', '').strip()
+    tag_name = clean_tag_name(raw_tag)
+
+    if not tag_name:
+        return jsonify({'error': 'Tag must be between 3 and 30 alphanumeric characters'}), 400
+
+    user_id = session.get('user_id') or (data.get('user_id', '').strip() if data.get('user_id') else None)
+
+    tag = Tag.query.filter_by(name=tag_name).first()
+    if not tag:
+        tag = Tag(name=tag_name)
+        db.session.add(tag)
+        db.session.flush()
+
+    existing = BookTag.query.filter_by(isbn=clean, tag_id=tag.tag_id).first()
+    if not existing:
+        bt = BookTag(isbn=clean, tag_id=tag.tag_id, added_by=user_id, is_auto_generated=False)
+        db.session.add(bt)
+        db.session.commit()
+
+    return jsonify({
+        'success': True,
+        'tag': tag.name,
+        'tag_id': tag.tag_id,
+        'all_tags': title.tags_list
+    })
+
+@bp.route('/book/<isbn>/tags/<tag_name>/delete', methods=['POST', 'DELETE'])
+@bp.route('/book/<isbn>/tags/<tag_name>', methods=['DELETE'])
+def delete_tag(isbn, tag_name):
+    """Remove a tag association from a book."""
+    clean = clean_isbn(isbn)
+    title = Title.query.filter_by(isbn=clean).first_or_404()
+    clean_name = tag_name.lower().strip()
+
+    tag = Tag.query.filter_by(name=clean_name).first()
+    if tag:
+        bt = BookTag.query.filter_by(isbn=clean, tag_id=tag.tag_id).first()
+        if bt:
+            db.session.delete(bt)
+            db.session.commit()
+            return jsonify({'success': True, 'all_tags': title.tags_list})
+
+    return jsonify({'error': 'Tag not associated with this book'}), 404
+
+@bp.route('/book/<isbn>/genre', methods=['POST'])
+def update_genre(isbn):
+    """Update a book's genre."""
+    clean = clean_isbn(isbn)
+    title = Title.query.filter_by(isbn=clean).first_or_404()
+    data = request.get_json(silent=True) or request.form
+    genre = data.get('genre', '').strip()
+
+    if genre:
+        title.genre = genre
+        db.session.commit()
+        return jsonify({'success': True, 'genre': title.genre})
+    return jsonify({'error': 'Genre cannot be blank'}), 400

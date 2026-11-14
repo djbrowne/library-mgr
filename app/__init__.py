@@ -1,7 +1,7 @@
 import os
 from flask import Flask, session
 from app.config import Config
-from app.db import db
+from app.db import db, migrate
 from app.models import User
 
 def create_app(config_class=Config):
@@ -14,6 +14,7 @@ def create_app(config_class=Config):
         covers_dir.mkdir(parents=True, exist_ok=True)
 
     db.init_app(app)
+    migrate.init_app(app, db, render_as_batch=True)
 
     # Register blueprints
     from app.routes.main import bp as main_bp

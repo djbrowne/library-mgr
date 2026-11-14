@@ -220,5 +220,47 @@ def seed_sample():
     db.session.commit()
     click.echo(click.style("Sample database successfully seeded with users and books.", fg="green"))
 
+@cli.command("db-version")
+def db_version():
+    """Display the active database schema version and supported capabilities."""
+    from app.services.version_service import get_database_info
+    info = get_database_info()
+    click.echo(click.style("=== Library Database Schema Status ===", fg="cyan", bold=True))
+    click.echo(f"  Alembic Revision : {info['revision'] or 'unversioned'}")
+    click.echo(f"  Semantic Version : {info['semantic_version'] or 'unknown'}")
+    click.echo(f"  Milestone Title  : {info['milestone_title'] or 'None'}")
+    click.echo(click.style("\nActive System Capabilities:", fg="yellow", bold=True))
+    if info['active_capabilities']:
+        for cap in info['active_capabilities']:
+            click.echo(f"  ✓ {cap}")
+    else:
+        click.echo("  (No versioned capabilities registered)")
+
+@cli.command("export-data")
+@click.option("--output", "-o", default="library_export.json", help="Path to write export JSON bundle.")
+def export_data_cmd(output):
+    """Export the database catalog, circulation, and tags into a portable JSON bundle."""
+    from app.services.version_service import export_database
+    res = export_database(output)
+    click.echo(click.style(
+        f"Export successful to '{output}'. Exported {len(res['titles'])} titles, "
+        f"{len(res['book_copies'])} copies, {len(res['users'])} users.",
+        fg="green"
+    ))
+
+@cli.command("merge-data")
+@click.argument("input_file", type=click.Path(exists=True, dir_okay=False))
+@click.option("--conflict", type=click.Choice(["skip", "overwrite"]), default="skip", help="Conflict resolution strategy.")
+def merge_data_cmd(input_file, conflict):
+    """Merge an exported database JSON bundle into the active database."""
+    from app.services.version_service import merge_database
+    stats = merge_database(input_file, conflict_resolution=conflict)
+    click.echo(click.style(
+        f"Merge complete: {stats['titles_created']} titles created, {stats['titles_updated']} updated, "
+        f"{stats['copies_added']} copies added, {stats['users_created']} users created, "
+        f"{stats['tags_merged']} tags merged.",
+        fg="green"
+    ))
+
 if __name__ == "__main__":
     cli()

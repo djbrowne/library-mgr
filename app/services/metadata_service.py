@@ -8,6 +8,94 @@ HEADERS = {
     'User-Agent': 'TanagerLibraryManager/1.0 (https://github.com/djbrowne/library-mgr)'
 }
 
+# Mapping patterns to normalize genre from subjects & categories
+GENRE_PATTERNS = [
+    (r'\b(computer|programming|software|coding|python|java|algorithm|developer|web development)\b', 'Technology & Engineering'),
+    (r'\b(science fiction|sci-fi|space opera|cyberpunk|dystopi)\b', 'Science Fiction'),
+    (r'\b(fantasy|magic|dragons|wizards|mythology)\b', 'Fantasy'),
+    (r'\b(mystery|thriller|detective|crime|suspense|murder)\b', 'Mystery & Thriller'),
+    (r'\b(biography|autobiography|memoir|diaries)\b', 'Biography & Memoir'),
+    (r'\b(history|historical|ancient|civilization|war|military)\b', 'History'),
+    (r'\b(philosophy|psychology|ethics|existential|meditation|self-help)\b', 'Philosophy & Psychology'),
+    (r'\b(physics|biology|chemistry|mathematics|astronomy|nature|ecology)\b', 'Science & Nature'),
+    (r'\b(art|photography|graphic design|music|cinema|architecture)\b', 'Arts & Photography'),
+    (r'\b(juvenile|children|young adult|picture books)\b', "Children & Young Adult"),
+    (r'\b(fiction|novel|stories|literature|drama)\b', 'Fiction'),
+    (r'\b(non-fiction|nonfiction|essay|journalism)\b', 'Non-Fiction')
+]
+
+IGNORED_TAG_TOKENS = {
+    'accessible book', 'protected daisy', 'in library', 'borrowable',
+    'open_syllabus_project', 'internet archive', 'long now manual',
+    'deposit libraries', 'lending library', 'nyt:paperback_nonfiction'
+}
+
+def clean_tag_name(raw: str) -> str:
+    """Normalize a tag string into a clean, lowercased, slug-friendly tag."""
+    if not raw:
+        return ""
+    # Strip parenthetical annotations like "(computer science)"
+    tag = re.sub(r'\(.*?\)', '', str(raw)).strip().lower()
+    tag = re.sub(r'[^a-z0-9\s\-]', '', tag).strip()
+    tag = re.sub(r'[\s_]+', '-', tag)
+    tag = re.sub(r'-+', '-', tag).strip('-')
+    if len(tag) < 3 or len(tag) > 30:
+        return ""
+    return tag
+
+def infer_genre_and_tags(categories=None, subjects=None, title=None, desc=None) -> tuple:
+    """
+    Examine subjects, categories, title, and description to infer
+    best-effort standard genre and up to 6 free-form tags.
+    """
+    categories = categories or []
+    subjects = subjects or []
+    raw_candidates = []
+
+    for c in categories:
+        if isinstance(c, str):
+            for part in c.split('/'):
+                raw_candidates.append(part.strip())
+
+    for s in subjects:
+        if isinstance(s, str):
+            raw_candidates.append(s.strip())
+        elif isinstance(s, dict) and 'name' in s:
+            raw_candidates.append(s['name'].strip())
+
+    # Build searchable corpus for genre matching
+    combined_corpus = " ".join([
+        " ".join(raw_candidates),
+        title or "",
+        desc or ""
+    ]).lower()
+
+    inferred_genre = "General"
+    for pattern, genre in GENRE_PATTERNS:
+        if re.search(pattern, combined_corpus):
+            inferred_genre = genre
+            break
+
+    # Extract distinct, cleaned tags
+    seen_tags = set()
+    tags = []
+    for raw in raw_candidates:
+        raw_low = raw.lower()
+        if any(ignored in raw_low for ignored in IGNORED_TAG_TOKENS):
+            continue
+        cleaned = clean_tag_name(raw)
+        if cleaned and cleaned not in seen_tags:
+            seen_tags.add(cleaned)
+            tags.append(cleaned)
+        if len(tags) >= 6:
+            break
+
+    # If no tags extracted from subjects, generate initial tags from genre & key title terms
+    if not tags and inferred_genre != "General":
+        tags.append(clean_tag_name(inferred_genre))
+
+    return inferred_genre, tags
+
 def clean_isbn(raw_isbn: str) -> str:
     """Strip hyphens, spaces, and normalize ISBN string."""
     if not raw_isbn:
@@ -208,6 +296,8 @@ def fetch_book_metadata(isbn: str) -> dict:
     cover_url = None
     work_key = None
     raw_data = {}
+    raw_subjects = []
+    raw_categories = []
 
     # 1. Try Open Library direct endpoint
     try:
@@ -220,6 +310,10 @@ def fetch_book_metadata(isbn: str) -> dict:
             if raw_data.get("publishers"):
                 publisher = ", ".join(raw_data.get("publishers"))
             
+            # Extract subjects
+            if raw_data.get("subjects"):
+                raw_subjects.extend(raw_data.get("subjects"))
+
             # Extract work key
             if raw_data.get("works"):
                 work_key = raw_data["works"][0].get("key")
@@ -239,7 +333,7 @@ def fetch_book_metadata(isbn: str) -> dict:
         pass
 
     # 2. Try Open Library Search endpoint to resolve authors or fill in missing fields
-    if not title or not authors:
+    if not title or not authors or not raw_subjects:
         try:
             search_url = f"https://openlibrary.org/search.json?q={clean}"
             s_resp = requests.get(search_url, headers=HEADERS, timeout=4)
@@ -260,11 +354,13 @@ def fetch_book_metadata(isbn: str) -> dict:
                         cover_url = f"https://covers.openlibrary.org/b/id/{doc.get('cover_i')}-M.jpg"
                     if not work_key and doc.get("key"):
                         work_key = doc.get("key")
+                    if doc.get("subject"):
+                        raw_subjects.extend(doc.get("subject")[:10])
         except Exception:
             pass
 
     # 3. Fallback to Google Books for basic bibliographic info if still missing
-    if not title or not authors or not cover_url:
+    if not title or not authors or not cover_url or not raw_categories:
         try:
             api_key = os.environ.get('GOOGLE_BOOKS_API_KEY', '').strip()
             gb_url = f"https://www.googleapis.com/books/v1/volumes?q=isbn:{clean}"
@@ -288,6 +384,8 @@ def fetch_book_metadata(isbn: str) -> dict:
                         publish_year = v_info.get("publishedDate")
                     if not cover_url and v_info.get("imageLinks"):
                         cover_url = v_info.get("imageLinks", {}).get("thumbnail")
+                    if v_info.get("categories"):
+                        raw_categories.extend(v_info.get("categories"))
         except Exception:
             pass
 
@@ -305,6 +403,14 @@ def fetch_book_metadata(isbn: str) -> dict:
             raw_data=raw_data
         )
 
+    # Infer best-effort genre and free-form tags
+    inferred_genre, inferred_tags = infer_genre_and_tags(
+        categories=raw_categories,
+        subjects=raw_subjects,
+        title=title,
+        desc=description
+    )
+
     # Save cover image locally if found
     local_cover_rel = save_cover_locally(clean, cover_url)
 
@@ -315,7 +421,9 @@ def fetch_book_metadata(isbn: str) -> dict:
         "description": description or "",
         "publisher": publisher or "",
         "publish_year": publish_year or "",
-        "cover_image_path": local_cover_rel
+        "cover_image_path": local_cover_rel,
+        "genre": inferred_genre,
+        "tags": inferred_tags
     }
 
 def save_cover_locally(clean_isbn: str, image_url: str) -> str:

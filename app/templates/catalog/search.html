@@ -18,16 +18,24 @@
 <!-- Search & Filter Card -->
 <div class="card shadow-sm border-0 mb-4 bg-white p-3">
     <form action="{{ url_for('catalog.search') }}" method="GET" class="row g-2">
-        <div class="col-md-6">
+        <div class="col-md-5">
             <div class="input-group">
                 <span class="input-group-text bg-light"><i class="bi bi-search text-muted"></i></span>
-                <input type="text" name="q" id="catalog-search-input" class="form-control" placeholder="Search by Title, Author, or ISBN..." value="{{ query }}">
+                <input type="text" name="q" id="catalog-search-input" class="form-control" placeholder="Search Title, Author, or ISBN..." value="{{ query }}">
                 <button type="button" class="btn btn-outline-secondary" title="Scan ISBN with Camera" onclick="openBarcodeScanner('catalog-search-input')">
                     <i class="bi bi-camera"></i>
                 </button>
             </div>
         </div>
-        <div class="col-md-3">
+        <div class="col-md-2">
+            <select name="genre" class="form-select">
+                <option value="">All Genres</option>
+                {% for g in genres %}
+                    <option value="{{ g }}" {% if genre_filter == g %}selected{% endif %}>{{ g }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-2">
             <select name="status" class="form-select">
                 <option value="">All Statuses</option>
                 <option value="available" {% if status_filter == 'available' %}selected{% endif %}>Available</option>
@@ -49,7 +57,30 @@
         <div class="col-md-1">
             <button type="submit" class="btn btn-primary w-100">Filter</button>
         </div>
+
+        {% if tag_filter %}
+            <input type="hidden" name="tag" value="{{ tag_filter }}">
+            <div class="col-12 mt-2">
+                <span class="badge bg-info text-dark p-2">
+                    Filtering by Tag: <strong>#{{ tag_filter }}</strong>
+                    <a href="{{ url_for('catalog.search', q=query, status=status_filter, condition=condition_filter, genre=genre_filter) }}" class="text-dark ms-2 text-decoration-none fw-bold" title="Clear Tag Filter">&times;</a>
+                </span>
+            </div>
+        {% endif %}
     </form>
+
+    <!-- Popular Tag Filter Chips -->
+    {% if all_tags %}
+        <div class="d-flex flex-wrap align-items-center gap-1 mt-2 pt-2 border-top">
+            <span class="small text-muted me-1"><i class="bi bi-tags me-1"></i>Tags:</span>
+            {% for t in all_tags[:12] %}
+                <a href="{{ url_for('catalog.search', tag=t.name, genre=genre_filter) }}" 
+                   class="badge text-decoration-none {% if tag_filter == t.name %}bg-primary text-white{% else %}bg-light text-secondary border{% endif %}">
+                    #{{ t.name }}
+                </a>
+            {% endfor %}
+        </div>
+    {% endif %}
 </div>
 
 <!-- Results Grid -->
@@ -75,9 +106,19 @@
                             </a>
                         </h6>
                         <div class="small text-muted text-truncate mb-2">{{ title.authors or 'Unknown Author' }}</div>
-                        <div class="small mb-2">
+                        <div class="small mb-2 d-flex flex-wrap gap-1">
                             <span class="badge bg-light text-dark border">ISBN: {{ title.isbn }}</span>
+                            <span class="badge bg-primary bg-opacity-10 text-primary border border-primary-subtle">{{ title.genre or 'General' }}</span>
                         </div>
+                        {% if title.book_tags %}
+                            <div class="d-flex flex-wrap gap-1 mb-2">
+                                {% for bt in title.book_tags[:3] %}
+                                    <a href="{{ url_for('catalog.search', tag=bt.tag.name) }}" class="badge bg-light text-secondary border text-decoration-none" style="font-size: 0.7rem;">
+                                        #{{ bt.tag.name }}
+                                    </a>
+                                {% endfor %}
+                            </div>
+                        {% endif %}
                     </div>
                 </div>
 

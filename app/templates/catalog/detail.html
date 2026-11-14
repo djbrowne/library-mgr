@@ -39,8 +39,66 @@
     <div class="col-md-8 col-lg-9">
         <div class="card shadow-sm border-0 p-4 bg-white mb-4">
             <h3 class="fw-bold mb-1">{{ title.title }}</h3>
-            <h6 class="text-muted mb-3">{{ title.authors or 'Unknown Author' }}</h6>
+            <h6 class="text-muted mb-2">{{ title.authors or 'Unknown Author' }}</h6>
+
+            <!-- Genre & Tag Metadata Section -->
+            <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+                <div class="d-inline-flex align-items-center">
+                    <span class="badge bg-primary bg-opacity-10 text-primary border border-primary-subtle px-3 py-2 fs-6" id="display-genre-badge">
+                        <i class="bi bi-bookmark-fill me-1"></i>{{ title.genre or 'General' }}
+                    </span>
+                    <div class="dropdown ms-1">
+                        <button class="btn btn-sm btn-link text-muted p-0 ms-1" type="button" data-bs-toggle="dropdown" title="Change Genre">
+                            <i class="bi bi-pencil-square"></i>
+                        </button>
+                        <ul class="dropdown-menu shadow-sm">
+                            <li class="dropdown-header">Select Genre</li>
+                            {% for g in genres %}
+                            <li>
+                                <button class="dropdown-item {% if title.genre == g %}active{% endif %}" type="button" onclick="updateBookGenre('{{ title.isbn }}', '{{ g }}')">
+                                    {{ g }}
+                                </button>
+                            </li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                </div>
+                <div id="genre-feedback-status" class="small"></div>
+            </div>
+
             <p class="text-secondary">{{ title.description or 'No synopsis recorded.' }}</p>
+
+            <!-- Free-form Tags Section -->
+            <div class="border-top pt-3 mt-3">
+                <div class="d-flex align-items-center justify-content-between mb-2">
+                    <label class="form-label small fw-bold text-muted mb-0">
+                        <i class="bi bi-tags text-primary me-1"></i> Tags (Editable by any user)
+                    </label>
+                    <div id="tag-feedback-status" class="small"></div>
+                </div>
+
+                <div class="d-flex flex-wrap align-items-center gap-1 mb-2" id="book-tags-container">
+                    {% if title.book_tags %}
+                        {% for bt in title.book_tags %}
+                            <span class="badge bg-light text-dark border me-1 mb-1 p-2 d-inline-flex align-items-center">
+                                <a href="{{ url_for('catalog.search', tag=bt.tag.name) }}" class="text-decoration-none text-dark me-1">#{{ bt.tag.name }}</a>
+                                <button type="button" class="btn-close ms-1" style="font-size: 0.55rem;" aria-label="Remove" onclick="deleteTagFromBook('{{ title.isbn }}', '{{ bt.tag.name }}')"></button>
+                            </span>
+                        {% endfor %}
+                    {% else %}
+                        <span class="text-muted small fst-italic">No tags added yet.</span>
+                    {% endif %}
+                </div>
+
+                <!-- Add Tag inline widget -->
+                <div class="input-group input-group-sm" style="max-width: 320px;">
+                    <span class="input-group-text bg-light text-muted">#</span>
+                    <input type="text" id="new-tag-input" class="form-control" placeholder="Add custom tag (e.g. sci-fi, classics)" onkeydown="if(event.key==='Enter'){event.preventDefault();addTagToBook('{{ title.isbn }}');}">
+                    <button class="btn btn-primary" type="button" onclick="addTagToBook('{{ title.isbn }}')">
+                        <i class="bi bi-plus-lg me-1"></i> Add Tag
+                    </button>
+                </div>
+            </div>
 
             <div class="d-flex gap-2 mt-3">
                 {% if title.available_copies_count > 0 %}

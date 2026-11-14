@@ -4,6 +4,55 @@ from app.db import db
 def utc_now():
     return datetime.now(timezone.utc)
 
+DEFAULT_GENRES = [
+    "Fiction",
+    "Non-Fiction",
+    "Science Fiction",
+    "Fantasy",
+    "Mystery & Thriller",
+    "Biography & Memoir",
+    "Technology & Engineering",
+    "Science & Nature",
+    "History",
+    "Philosophy & Psychology",
+    "Arts & Photography",
+    "Children & Young Adult",
+    "General"
+]
+
+class Tag(db.Model):
+    __tablename__ = 'tags'
+
+    tag_id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    name = db.Column(db.String(50), unique=True, nullable=False, index=True)
+    created_at = db.Column(db.DateTime, default=utc_now, nullable=False)
+
+    book_tags = db.relationship('BookTag', back_populates='tag', cascade='all, delete-orphan', lazy='dynamic')
+
+    def to_dict(self):
+        return {
+            'tag_id': self.tag_id,
+            'name': self.name,
+            'created_at': self.created_at.isoformat() if self.created_at else None
+        }
+
+class BookTag(db.Model):
+    __tablename__ = 'book_tags'
+    __table_args__ = (
+        db.UniqueConstraint('isbn', 'tag_id', name='uq_book_tag'),
+    )
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    isbn = db.Column(db.String(20), db.ForeignKey('titles.isbn'), nullable=False, index=True)
+    tag_id = db.Column(db.Integer, db.ForeignKey('tags.tag_id'), nullable=False, index=True)
+    added_by = db.Column(db.String(4), db.ForeignKey('users.user_id'), nullable=True)
+    is_auto_generated = db.Column(db.Boolean, default=False, nullable=False)
+    created_at = db.Column(db.DateTime, default=utc_now, nullable=False)
+
+    title = db.relationship('Title', back_populates='book_tags')
+    tag = db.relationship('Tag', back_populates='book_tags')
+    user = db.relationship('User')
+
 class User(db.Model):
     __tablename__ = 'users'
 
@@ -39,10 +88,16 @@ class Title(db.Model):
     publisher = db.Column(db.String(255), nullable=True)
     publish_year = db.Column(db.String(20), nullable=True)
     cover_image_path = db.Column(db.String(255), nullable=True)
+    genre = db.Column(db.String(50), nullable=True, default='General')
     created_at = db.Column(db.DateTime, default=utc_now, nullable=False)
 
     copies = db.relationship('BookCopy', back_populates='title', cascade='all, delete-orphan', lazy='dynamic')
     holds = db.relationship('Hold', back_populates='title', cascade='all, delete-orphan', lazy='dynamic')
+    book_tags = db.relationship('BookTag', back_populates='title', cascade='all, delete-orphan', lazy='joined')
+
+    @property
+    def tags_list(self):
+        return [bt.tag.name for bt in self.book_tags]
 
     @property
     def available_copies_count(self):
