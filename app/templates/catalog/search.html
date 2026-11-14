@@ -18,10 +18,10 @@
 <!-- Search & Filter Card -->
 <div class="card shadow-sm border-0 mb-4 bg-white p-3">
     <form action="{{ url_for('catalog.search') }}" method="GET" class="row g-2">
-        <div class="col-md-5">
+        <div class="col-md-4">
             <div class="input-group">
                 <span class="input-group-text bg-light"><i class="bi bi-search text-muted"></i></span>
-                <input type="text" name="q" id="catalog-search-input" class="form-control" placeholder="Search Title, Author, or ISBN..." value="{{ query }}">
+                <input type="text" name="q" id="catalog-search-input" class="form-control" placeholder="Search Title, Author, ISBN, or #Tag..." value="{{ query }}">
                 <button type="button" class="btn btn-outline-secondary" title="Scan ISBN with Camera" onclick="openBarcodeScanner('catalog-search-input')">
                     <i class="bi bi-camera"></i>
                 </button>
@@ -36,6 +36,14 @@
             </select>
         </div>
         <div class="col-md-2">
+            <select name="tag" class="form-select">
+                <option value="">All Tags</option>
+                {% for t in all_tags %}
+                    <option value="{{ t.name }}" {% if tag_filter == t.name %}selected{% endif %}>#{{ t.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-2">
             <select name="status" class="form-select">
                 <option value="">All Statuses</option>
                 <option value="available" {% if status_filter == 'available' %}selected{% endif %}>Available</option>
@@ -46,9 +54,9 @@
                 <option value="removed" {% if status_filter == 'removed' %}selected{% endif %}>Removed</option>
             </select>
         </div>
-        <div class="col-md-2">
-            <select name="condition" class="form-select">
-                <option value="">All Conditions</option>
+        <div class="col-md-1">
+            <select name="condition" class="form-select px-1">
+                <option value="">Cond.</option>
                 <option value="new" {% if condition_filter == 'new' %}selected{% endif %}>New</option>
                 <option value="good" {% if condition_filter == 'good' %}selected{% endif %}>Good</option>
                 <option value="damaged" {% if condition_filter == 'damaged' %}selected{% endif %}>Damaged</option>
@@ -59,7 +67,6 @@
         </div>
 
         {% if tag_filter %}
-            <input type="hidden" name="tag" value="{{ tag_filter }}">
             <div class="col-12 mt-2">
                 <span class="badge bg-info text-dark p-2">
                     Filtering by Tag: <strong>#{{ tag_filter }}</strong>
@@ -112,8 +119,11 @@
                         </div>
                         {% if title.book_tags %}
                             <div class="d-flex flex-wrap gap-1 mb-2">
-                                {% for bt in title.book_tags[:3] %}
-                                    <a href="{{ url_for('catalog.search', tag=bt.tag.name) }}" class="badge bg-light text-secondary border text-decoration-none" style="font-size: 0.7rem;">
+                                {% for bt in title.book_tags %}
+                                    {% set is_match = (tag_filter and tag_filter == bt.tag.name) or (query and query.lower() in bt.tag.name.lower()) %}
+                                    <a href="{{ url_for('catalog.search', tag=bt.tag.name) }}" 
+                                       class="badge text-decoration-none {% if is_match %}bg-warning text-dark border border-warning fw-bold{% else %}bg-light text-secondary border{% endif %}" 
+                                       style="font-size: 0.72rem;">
                                         #{{ bt.tag.name }}
                                     </a>
                                 {% endfor %}

@@ -133,3 +133,67 @@ def test_database_export_and_merge(app):
         assert imported_title is not None
         assert imported_title.genre == 'Technology & Engineering'
         assert 'pragmatic' in imported_title.tags_list
+
+def test_universal_search_by_tag(app):
+    client = app.test_client()
+
+    with app.app_context():
+        # Clean Code: add tag 'architecture'
+        tag = Tag.query.filter_by(name='architecture').first()
+        if not tag:
+            tag = Tag(name='architecture')
+            db.session.add(tag)
+            db.session.flush()
+        if not BookTag.query.filter_by(isbn='9780132350884', tag_id=tag.tag_id).first():
+            bt = BookTag(isbn='9780132350884', tag_id=tag.tag_id, is_auto_generated=False)
+            db.session.add(bt)
+            db.session.commit()
+
+    # Universal search by tag name without hash
+    res = client.get('/catalog/?q=architecture')
+    assert res.status_code == 200
+    assert b'Clean Code' in res.data
+
+    # Universal search with hash prefix '#architecture'
+    res_hash = client.get('/catalog/?q=%23architecture')
+    assert res_hash.status_code == 200
+    assert b'Clean Code' in res_hash.data
+
+    # Search for non-existent tag
+    res_none = client.get('/catalog/?q=nonexistenttagxyz')
+    assert res_none.status_code == 200
+    assert b'Clean Code' not in res_none.data
+
+def test_tag_reports_and_csv_export(app):
+    client = app.test_client()
+
+    with app.app_context():
+        # Tag Clean Code with 'python-testing'
+        tag = Tag.query.filter_by(name='python-testing').first()
+        if not tag:
+            tag = Tag(name='python-testing')
+            db.session.add(tag)
+            db.session.flush()
+        if not BookTag.query.filter_by(isbn='9780132350884', tag_id=tag.tag_id).first():
+            bt = BookTag(isbn='9780132350884', tag_id=tag.tag_id, is_auto_generated=False)
+            db.session.add(bt)
+            db.session.commit()
+
+    # 1. Main tag report page
+    res = client.get('/reports/tags')
+    assert res.status_code == 200
+    assert b'Tag & Genre Analytics' in res.data
+    assert b'python-testing' in res.data
+
+    # 2. Tag drill-down
+    res_drill = client.get('/reports/tags?tag=python-testing')
+    assert res_drill.status_code == 200
+    assert b'Clean Code' in res_drill.data
+    assert b'Drill-Down: Books Tagged with' in res_drill.data
+
+    # 3. CSV Export
+    res_csv = client.get('/reports/tags/export.csv')
+    assert res_csv.status_code == 200
+    assert res_csv.headers['Content-Type'].startswith('text/csv')
+    assert b'python-testing,9780132350884,Clean Code' in res_csv.data
+

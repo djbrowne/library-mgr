@@ -17,24 +17,24 @@ def search():
     titles_query = Title.query
 
     if query:
-        clean = clean_isbn(query)
+        search_term = query.lstrip('#').strip()
+        clean = clean_isbn(search_term)
+        conditions = [
+            Title.title.ilike(f"%{search_term}%"),
+            Title.authors.ilike(f"%{search_term}%"),
+            Title.genre.ilike(f"%{search_term}%"),
+            Title.book_tags.any(BookTag.tag.has(Tag.name.ilike(f"%{search_term}%")))
+        ]
         if clean:
-            titles_query = titles_query.filter(
-                (Title.isbn.like(f"%{clean}%")) |
-                (Title.title.ilike(f"%{query}%")) |
-                (Title.authors.ilike(f"%{query}%"))
-            )
-        else:
-            titles_query = titles_query.filter(
-                (Title.title.ilike(f"%{query}%")) |
-                (Title.authors.ilike(f"%{query}%"))
-            )
+            conditions.append(Title.isbn.like(f"%{clean}%"))
+        titles_query = titles_query.filter(db.or_(*conditions))
 
     if genre_filter:
         titles_query = titles_query.filter(Title.genre == genre_filter)
 
     if tag_filter:
-        titles_query = titles_query.join(Title.book_tags).join(BookTag.tag).filter(Tag.name == tag_filter.lower().strip())
+        clean_tag_filter = tag_filter.lstrip('#').strip().lower()
+        titles_query = titles_query.filter(Title.book_tags.any(BookTag.tag.has(Tag.name == clean_tag_filter)))
 
     titles = titles_query.order_by(Title.title.asc()).all()
 
